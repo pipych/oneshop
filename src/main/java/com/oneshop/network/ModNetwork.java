@@ -97,7 +97,7 @@ public final class ModNetwork {
                     return;
                 }
                 PlayerAccountService.syncBalance(player);
-                ShopTransactionService.syncShopData(player);
+                ShopTransactionService.syncShopDataIfChanged(player);
                 PacketDistributor.sendToPlayer(player, new S2COpenShopScreenPayload(isAdmin));
             }
         });
@@ -158,7 +158,6 @@ public final class ModNetwork {
                     player.sendSystemMessage(Component.translatable("oneshop.admin.entry_saved", payload.entry().id()).withStyle(ChatFormatting.GREEN));
                 }
                 savedData.setDirty();
-                server.overworld().getDataStorage().save();
                 ShopTransactionService.broadcastShopData(server);
             }
         });
@@ -186,7 +185,6 @@ public final class ModNetwork {
                     player.sendSystemMessage(Component.translatable("oneshop.admin.category_saved", payload.category().id()).withStyle(ChatFormatting.GREEN));
                 }
                 savedData.setDirty();
-                server.overworld().getDataStorage().save();
                 ShopTransactionService.broadcastShopData(server);
             }
         });

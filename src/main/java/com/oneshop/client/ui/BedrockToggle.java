@@ -155,7 +155,7 @@ public class BedrockToggle extends FlowLayout implements Hoverable {
             return root.focusHandler();
         }
         var mc = Minecraft.getInstance();
-        if (mc.screen instanceof ShopScreen screen && screen.getFocusHandler() != null) {
+        if (mc.screen instanceof OneModUi screen && screen.getFocusHandler() != null) {
             return screen.getFocusHandler();
         }
         if (this.focusHandler == null) {
@@ -166,9 +166,6 @@ public class BedrockToggle extends FlowLayout implements Hoverable {
 
     @Override
     public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
-        if (this.focusHandler() == null) {
-            this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-        }
         super.draw(context, mouseX, mouseY, partialTicks, delta);
     }
 
@@ -324,21 +321,39 @@ public class BedrockToggle extends FlowLayout implements Hoverable {
     }
 
     @Override
+    protected void parentUpdate(float delta, int mouseX, int mouseY) {
+        super.parentUpdate(delta, mouseX, mouseY);
+        boolean validHover = this.active && isMouseOver(mouseX, mouseY);
+        if (this.isHoveredState != validHover) {
+            this.isHoveredState = validHover;
+            if (validHover) {
+                this.mouseEnterEvents.sink().onMouseEnter();
+            } else {
+                this.mouseLeaveEvents.sink().onMouseLeave();
+            }
+        }
+    }
+
+    @Override
+    protected void updateHoveredState(int mouseX, int mouseY, boolean nowHovered) {
+        super.updateHoveredState(mouseX, mouseY, nowHovered);
+        boolean validHover = nowHovered && this.active && isMouseOver(mouseX, mouseY);
+        if (this.isHoveredState != validHover) {
+            this.isHoveredState = validHover;
+            if (validHover) {
+                this.mouseEnterEvents.sink().onMouseEnter();
+            } else {
+                this.mouseLeaveEvents.sink().onMouseLeave();
+            }
+        }
+    }
+
+    @Override
     public boolean isHovered() {
         if (!this.active || !this.isHoveredState) {
             return false;
         }
         if (this.hoverCondition != null && !this.hoverCondition.getAsBoolean()) {
-            return false;
-        }
-        var mc = Minecraft.getInstance();
-        if (mc.screen == null) {
-            return false;
-        }
-        double mouseX = mc.mouseHandler.xpos() * (double) mc.getWindow().getGuiScaledWidth() / (double) mc.getWindow().getScreenWidth();
-        double mouseY = mc.mouseHandler.ypos() * (double) mc.getWindow().getGuiScaledHeight() / (double) mc.getWindow().getScreenHeight();
-        if (!isMouseOver(mouseX, mouseY)) {
-            this.isHoveredState = false;
             return false;
         }
         return true;

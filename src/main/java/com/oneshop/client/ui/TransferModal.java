@@ -157,9 +157,7 @@ public final class TransferModal {
                 playerRow.surface(BedrockTheme.withHoverOutline(rowSurface, 0, BedrockTheme.OUTLINE_HOVER));
 
                 // Player avatar (16x16 head render)
-                var avatar = Components.texture(playerInfo.getSkin().texture(), 8, 8, 8, 8, 64, 64);
-                avatar.sizing(Sizing.fixed(16), Sizing.fixed(16));
-                avatar.blend(true);
+                var avatar = new TextureDisplayComponent(playerInfo.getSkin().texture(), 16, 16, 8f, 8f, 8, 8, 64, 64);
                 playerRow.child(avatar);
 
                 // Player Name
@@ -204,9 +202,7 @@ public final class TransferModal {
         backBtn.tooltip(Component.translatable("oneshop.gui.transfer.change_player"));
         recipientRow.child(backBtn);
 
-        var avatar = Components.texture(recipient.getSkin().texture(), 8, 8, 8, 8, 64, 64);
-        avatar.sizing(Sizing.fixed(16), Sizing.fixed(16));
-        avatar.blend(true);
+        var avatar = new TextureDisplayComponent(recipient.getSkin().texture(), 16, 16, 8f, 8f, 8, 8, 64, 64);
         recipientRow.child(avatar);
 
         LabelComponent recipientLabel = Components.label(Component.translatable("oneshop.gui.transfer.recipient", recipient.getProfile().getName()).withStyle(ChatFormatting.BOLD));

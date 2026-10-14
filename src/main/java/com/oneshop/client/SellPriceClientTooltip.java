@@ -17,11 +17,29 @@ public class SellPriceClientTooltip implements ClientTooltipComponent {
     public static final int COIN_ICON_WIDTH = 8;
     public static final int COIN_ICON_HEIGHT = 8;
 
+    private static double cachedPrice = Double.NaN;
+    private static Component cachedText = null;
+
     private final Component text;
 
     public SellPriceClientTooltip(SellPriceTooltip data) {
-        this.text = Component.literal("Можно продать: ").withStyle(ChatFormatting.GRAY)
-                .append(Component.literal(String.valueOf(data.price())).withStyle(ChatFormatting.GREEN));
+        double price = data.price();
+        if (Double.compare(price, cachedPrice) == 0 && cachedText != null) {
+            this.text = cachedText;
+        } else {
+            cachedPrice = price;
+            cachedText = Component.literal("Можно продать: ").withStyle(ChatFormatting.GRAY)
+                    .append(Component.literal(formatPrice(price)).withStyle(ChatFormatting.GREEN));
+            this.text = cachedText;
+        }
+    }
+
+    private static String formatPrice(double price) {
+        if (price == (long) price) {
+            return Long.toString((long) price);
+        }
+        double rounded = Math.round(price * 100.0) / 100.0;
+        return Double.toString(rounded);
     }
 
     @Override
@@ -43,6 +61,7 @@ public class SellPriceClientTooltip implements ClientTooltipComponent {
     public void renderImage(Font font, int x, int y, GuiGraphics guiGraphics) {
         int iconX = x + font.width(this.text) + 2;
         RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
         guiGraphics.blit(COIN_ICON_TEXTURE, iconX, y, 0, 0, 8, 8, 8, 8);
     }
 

@@ -69,20 +69,17 @@ public class LotIconDisplayComponent extends FlowLayout {
 
     @Override
     public void draw(io.wispforest.owo.ui.core.OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
-        if (this.focusHandler() == null) {
-            this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-        }
-        float[] prevShader = com.mojang.blaze3d.systems.RenderSystem.getShaderColor().clone();
-        float currentAlpha = prevShader[3];
+        float[] shaderColor = com.mojang.blaze3d.systems.RenderSystem.getShaderColor();
+        float prevR = shaderColor[0], prevG = shaderColor[1], prevB = shaderColor[2], prevA = shaderColor[3];
 
         com.mojang.blaze3d.systems.RenderSystem.enableBlend();
         com.mojang.blaze3d.systems.RenderSystem.defaultBlendFunc();
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, currentAlpha);
-        context.setColor(1.0f, 1.0f, 1.0f, currentAlpha);
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, prevA);
+        context.setColor(1.0f, 1.0f, 1.0f, prevA);
 
         super.draw(context, mouseX, mouseY, partialTicks, delta);
 
-        context.setColor(prevShader[0], prevShader[1], prevShader[2], prevShader[3]);
-        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(prevShader[0], prevShader[1], prevShader[2], prevShader[3]);
+        context.setColor(prevR, prevG, prevB, prevA);
+        com.mojang.blaze3d.systems.RenderSystem.setShaderColor(prevR, prevG, prevB, prevA);
     }
 }

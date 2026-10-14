@@ -219,11 +219,14 @@ public final class BedrockSurfaces {
         drawGreenButton(context, component.x(), component.y(), component.width(), component.height(), active);
     };
 
+    private static final Surface GRAY_BUTTON_HOVER = withHoverOutline(GRAY_BUTTON_BASE);
+    private static final Surface GREEN_BUTTON_HOVER = withHoverOutline(GREEN_BUTTON_BASE);
+
     /**
      * Reusable Bedrock Gray Button Surface with dynamic 1px white hover outline.
      */
     public static Surface bedrockGrayButton() {
-        return withHoverOutline(GRAY_BUTTON_BASE);
+        return GRAY_BUTTON_HOVER;
     }
 
     public static Surface bedrockGrayButton(BooleanSupplier hoverCondition) {
@@ -234,7 +237,7 @@ public final class BedrockSurfaces {
      * Reusable Bedrock Green Button Surface with dynamic 1px white hover outline.
      */
     public static Surface bedrockGreenButton() {
-        return withHoverOutline(GREEN_BUTTON_BASE);
+        return GREEN_BUTTON_HOVER;
     }
 
     public static Surface bedrockGreenButton(BooleanSupplier hoverCondition) {

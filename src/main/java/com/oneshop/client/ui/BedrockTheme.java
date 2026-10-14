@@ -126,16 +126,32 @@ public final class BedrockTheme {
         context.fill(x + w - 1, y, x + w, y + h, outlineColor);
     }
 
-    /** Per-component hover fade state, so a Surface instance can safely be shared. */
+    /** Per-component hover fade state, with fast-path for the single-component case. */
     private static final class HoverFade {
-        private final java.util.Map<Object, AnimatedFloat> states = new java.util.WeakHashMap<>();
+        private Object lastComponent;
+        private AnimatedFloat lastFade;
+        private java.util.Map<Object, AnimatedFloat> states;
 
         /**
          * Retargets the fade when the hover state flips (equivalent to hooking mouseEnter/mouseLeave, but also
          * honours hover conditions such as "a modal is open") and returns the current 0..1 alpha factor.
          */
         float alpha(Object component, boolean hovered) {
-            AnimatedFloat fade = states.computeIfAbsent(component, k -> new AnimatedFloat(0f));
+            AnimatedFloat fade;
+            if (component == this.lastComponent && this.lastFade != null) {
+                fade = this.lastFade;
+            } else if (this.lastComponent == null) {
+                this.lastComponent = component;
+                fade = this.lastFade = new AnimatedFloat(0f);
+            } else {
+                if (this.states == null) {
+                    this.states = new java.util.WeakHashMap<>();
+                    this.states.put(this.lastComponent, this.lastFade);
+                }
+                fade = this.states.computeIfAbsent(component, k -> new AnimatedFloat(0f));
+                this.lastComponent = component;
+                this.lastFade = fade;
+            }
             fade.animateTo(hovered ? 1f : 0f, hovered ? 100 : 120, io.wispforest.owo.ui.core.Easing.SINE);
             return fade.get();
         }

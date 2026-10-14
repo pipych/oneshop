@@ -59,8 +59,13 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
     private static final int ROWS = 7;
     private static final int PAGE_SIZE = COLUMNS * ROWS; // 84 items/textures per page
 
+    private record CachedItemEntry(ItemStack stack, String lowerName, String lowerId) {}
+    private record CachedTextureEntry(ResourceLocation texture, String lowerFull, String lowerPath) {}
+
     private static List<ItemStack> CACHED_ITEMS = null;
+    private static List<CachedItemEntry> CACHED_ITEM_ENTRIES = null;
     private static List<ResourceLocation> CACHED_TEXTURES = null;
+    private static List<CachedTextureEntry> CACHED_TEXTURE_ENTRIES = null;
 
     private final Screen parentScreen;
     private final Consumer<LotIcon> onSelect;
@@ -78,30 +83,69 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
         this.onCancel = onCancel;
     }
 
-    public static List<ItemStack> getCachedItems() {
-        if (CACHED_ITEMS == null) {
-            List<ItemStack> list = new ArrayList<>();
+    private static List<CachedItemEntry> getCachedItemEntries() {
+        if (CACHED_ITEM_ENTRIES == null) {
+            List<CachedItemEntry> entries = new ArrayList<>();
+            List<ItemStack> items = new ArrayList<>();
             for (Item item : BuiltInRegistries.ITEM) {
                 if (item == Items.AIR) continue;
                 ItemStack stack = new ItemStack(item);
                 if (!stack.isEmpty()) {
-                    list.add(stack);
+                    items.add(stack);
+                    String lowerName = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
+                    String lowerId = BuiltInRegistries.ITEM.getKey(item).toString().toLowerCase(Locale.ROOT);
+                    entries.add(new CachedItemEntry(stack, lowerName, lowerId));
                 }
             }
-            CACHED_ITEMS = list;
+            CACHED_ITEMS = items;
+            CACHED_ITEM_ENTRIES = entries;
+        }
+        return CACHED_ITEM_ENTRIES;
+    }
+
+    public static List<ItemStack> getCachedItems() {
+        if (CACHED_ITEMS == null) {
+            getCachedItemEntries();
         }
         return CACHED_ITEMS;
     }
 
+    private static List<CachedTextureEntry> getCachedTextureEntries() {
+        if (CACHED_TEXTURE_ENTRIES == null) {
+            Minecraft mc = Minecraft.getInstance();
+            List<String> prefixes = List.of("textures/item", "textures/gui", "textures/mob_effect");
+            java.util.Map<ResourceLocation, Resource> combined = new java.util.HashMap<>();
+            for (String prefix : prefixes) {
+                Map<ResourceLocation, Resource> map = mc.getResourceManager().listResources(prefix, rl -> {
+                    String path = rl.getPath();
+                    return path.endsWith(".png") && !path.contains("/title/") && !path.contains("/container/");
+                });
+                combined.putAll(map);
+            }
+            List<ResourceLocation> list = new ArrayList<>(combined.keySet());
+            list.sort(Comparator.comparing(ResourceLocation::toString));
+            List<CachedTextureEntry> entries = new ArrayList<>(list.size());
+            for (ResourceLocation rl : list) {
+                entries.add(new CachedTextureEntry(rl, rl.toString().toLowerCase(Locale.ROOT), rl.getPath().toLowerCase(Locale.ROOT)));
+            }
+            CACHED_TEXTURES = list;
+            CACHED_TEXTURE_ENTRIES = entries;
+        }
+        return CACHED_TEXTURE_ENTRIES;
+    }
+
     public static List<ResourceLocation> getCachedTextures() {
         if (CACHED_TEXTURES == null) {
-            Minecraft mc = Minecraft.getInstance();
-            Map<ResourceLocation, Resource> map = mc.getResourceManager().listResources("textures", rl -> rl.getPath().endsWith(".png"));
-            List<ResourceLocation> list = new ArrayList<>(map.keySet());
-            list.sort(Comparator.comparing(ResourceLocation::toString));
-            CACHED_TEXTURES = list;
+            getCachedTextureEntries();
         }
         return CACHED_TEXTURES;
+    }
+
+    public static void clearCaches() {
+        CACHED_ITEMS = null;
+        CACHED_ITEM_ENTRIES = null;
+        CACHED_TEXTURES = null;
+        CACHED_TEXTURE_ENTRIES = null;
     }
 
     @Override
@@ -133,6 +177,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
         context.setColor(1.0f, 1.0f, 1.0f, alpha);
         super.render(context, mouseX, mouseY, delta);
+        context.flush();
         context.setColor(1.0f, 1.0f, 1.0f, 1.0f);
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
     }
@@ -257,7 +302,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
         final int[] currentPage = {0};
         final String[] searchQuery = {""};
 
-        FlowLayout modalBackdrop = ShopScreen.createModalBackdrop();
+        FlowLayout modalBackdrop = OneModUi.createModalBackdrop();
         // Dialog container (Bedrock Panel)
         FlowLayout dialog = Containers.verticalFlow(Sizing.fixed(320), Sizing.content());
         dialog.surface(BedrockTheme.PANEL);
@@ -376,12 +421,10 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
             String query = searchQuery[0];
 
             if (activeTab[0] == Tab.ITEMS) {
-                List<ItemStack> allItems = getCachedItems();
-                List<ItemStack> filtered = allItems.stream().filter(stack -> {
+                List<CachedItemEntry> allEntries = getCachedItemEntries();
+                List<CachedItemEntry> filtered = allEntries.stream().filter(entry -> {
                     if (query.isEmpty()) return true;
-                    String name = stack.getHoverName().getString().toLowerCase(Locale.ROOT);
-                    String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().toLowerCase(Locale.ROOT);
-                    return name.contains(query) || id.contains(query);
+                    return entry.lowerName().contains(query) || entry.lowerId().contains(query);
                 }).toList();
 
                 int totalPages = Math.max(1, (int) Math.ceil((double) filtered.size() / PAGE_SIZE));
@@ -399,7 +442,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
 
                 int start = currentPage[0] * PAGE_SIZE;
                 int end = Math.min(start + PAGE_SIZE, filtered.size());
-                List<ItemStack> pageItems = filtered.subList(start, end);
+                List<CachedItemEntry> pageItems = filtered.subList(start, end);
 
                 FlowLayout currentRow = null;
                 for (int i = 0; i < pageItems.size(); i++) {
@@ -408,7 +451,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
                         currentRow.gap(2);
                         itemGridPanel.child(currentRow);
                     }
-                    ItemStack stack = pageItems.get(i);
+                    ItemStack stack = pageItems.get(i).stack();
                     GridItemCellWidget cell = new GridItemCellWidget(stack, clickedStack -> {
                         onSelect.accept(LotIcon.of(clickedStack));
                     });
@@ -417,10 +460,10 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
                     }
                 }
             } else {
-                List<ResourceLocation> allTextures = getCachedTextures();
-                List<ResourceLocation> filtered = allTextures.stream().filter(rl -> {
+                List<CachedTextureEntry> allEntries = getCachedTextureEntries();
+                List<CachedTextureEntry> filtered = allEntries.stream().filter(entry -> {
                     if (query.isEmpty()) return true;
-                    return rl.toString().toLowerCase(Locale.ROOT).contains(query) || rl.getPath().toLowerCase(Locale.ROOT).contains(query);
+                    return entry.lowerFull().contains(query) || entry.lowerPath().contains(query);
                 }).toList();
 
                 int totalPages = Math.max(1, (int) Math.ceil((double) filtered.size() / PAGE_SIZE));
@@ -438,7 +481,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
 
                 int start = currentPage[0] * PAGE_SIZE;
                 int end = Math.min(start + PAGE_SIZE, filtered.size());
-                List<ResourceLocation> pageTextures = filtered.subList(start, end);
+                List<CachedTextureEntry> pageTextures = filtered.subList(start, end);
 
                 FlowLayout currentRow = null;
                 for (int i = 0; i < pageTextures.size(); i++) {
@@ -447,7 +490,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
                         currentRow.gap(2);
                         itemGridPanel.child(currentRow);
                     }
-                    ResourceLocation rl = pageTextures.get(i);
+                    ResourceLocation rl = pageTextures.get(i).texture();
                     GridTextureCellWidget cell = new GridTextureCellWidget(rl, clickedRl -> {
                         onSelect.accept(LotIcon.of(clickedRl));
                     });
@@ -546,7 +589,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
                 return root.focusHandler();
             }
             var mc = Minecraft.getInstance();
-            if (mc.screen instanceof ShopScreen screen && screen.getFocusHandler() != null) {
+            if (mc.screen instanceof OneModUi screen && screen.getFocusHandler() != null) {
                 return screen.getFocusHandler();
             }
             if (mc.screen instanceof IconPickerModal picker && picker.getFocusHandler() != null) {
@@ -570,9 +613,6 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
 
         @Override
         public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
-            if (this.focusHandler() == null) {
-                this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-            }
             if (this.clipChildren) {
                 var p = this.padding.get();
                 ScissorStack.push(this.x + p.left(), this.y + p.top(), Math.max(0, this.width - p.horizontal()), Math.max(0, this.height - p.vertical()), context.pose());
@@ -590,6 +630,7 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
 
     public static class GridItemCellWidget extends HoverableFlowLayout {
         private final ItemStack stack;
+        private boolean tooltipInitialized = false;
 
         public GridItemCellWidget(ItemStack stack, Consumer<ItemStack> onClick) {
             super(Sizing.fixed(18), Sizing.fixed(18), Algorithm.VERTICAL);
@@ -604,10 +645,16 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
             };
             this.surface(BedrockTheme.withHoverOutline(cellBase, 0, BedrockTheme.OUTLINE_HOVER));
 
-            Minecraft mc = Minecraft.getInstance();
-            Item.TooltipContext tc = mc.level != null ? Item.TooltipContext.of(mc.level) : Item.TooltipContext.EMPTY;
-            this.tooltip(stack.getTooltipLines(tc, mc.player, TooltipFlag.NORMAL));
+            this.mouseEnter().subscribe(() -> {
+                if (!this.tooltipInitialized) {
+                    this.tooltipInitialized = true;
+                    Minecraft mc = Minecraft.getInstance();
+                    Item.TooltipContext tc = mc.level != null ? Item.TooltipContext.of(mc.level) : Item.TooltipContext.EMPTY;
+                    this.tooltip(this.stack.getTooltipLines(tc, mc.player, TooltipFlag.NORMAL));
+                }
+            });
 
+            Minecraft mc = Minecraft.getInstance();
             this.mouseDown().subscribe((mx, my, btn) -> {
                 mc.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0f));
                 onClick.accept(stack);
@@ -624,21 +671,14 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
             int itemX = this.x + (this.width - 16) / 2;
             int itemY = this.y + (this.height - 16) / 2;
 
-            float[] prevShader = RenderSystem.getShaderColor().clone();
-            float currentAlpha = prevShader[3];
+            float[] shaderColor = RenderSystem.getShaderColor();
+            float prevR = shaderColor[0], prevG = shaderColor[1], prevB = shaderColor[2], prevA = shaderColor[3];
 
-            context.pose().pushPose();
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, currentAlpha);
-            context.setColor(1.0f, 1.0f, 1.0f, currentAlpha);
-
-            context.renderItem(this.stack, itemX, itemY);
+            ItemDisplayComponent.renderItemWithAlpha(context, this.stack, itemX, itemY, 16.0f, prevA);
             context.renderItemDecorations(Minecraft.getInstance().font, this.stack, itemX, itemY);
 
-            context.setColor(prevShader[0], prevShader[1], prevShader[2], prevShader[3]);
-            RenderSystem.setShaderColor(prevShader[0], prevShader[1], prevShader[2], prevShader[3]);
-            context.pose().popPose();
+            context.setColor(prevR, prevG, prevB, prevA);
+            RenderSystem.setShaderColor(prevR, prevG, prevB, prevA);
         }
     }
 
@@ -677,19 +717,19 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
             int iconX = this.x + (this.width - iconSize) / 2;
             int iconY = this.y + (this.height - iconSize) / 2;
 
-            float[] prevShader = RenderSystem.getShaderColor().clone();
-            float currentAlpha = prevShader[3];
+            float[] shaderColor = RenderSystem.getShaderColor();
+            float prevR = shaderColor[0], prevG = shaderColor[1], prevB = shaderColor[2], prevA = shaderColor[3];
 
             context.pose().pushPose();
             RenderSystem.enableBlend();
             RenderSystem.defaultBlendFunc();
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, currentAlpha);
-            context.setColor(1.0f, 1.0f, 1.0f, currentAlpha);
+            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, prevA);
+            context.setColor(1.0f, 1.0f, 1.0f, prevA);
 
             context.blit(this.texture, iconX, iconY, iconSize, iconSize, 0.0f, 0.0f, 1, 1, 1, 1);
 
-            context.setColor(prevShader[0], prevShader[1], prevShader[2], prevShader[3]);
-            RenderSystem.setShaderColor(prevShader[0], prevShader[1], prevShader[2], prevShader[3]);
+            context.setColor(prevR, prevG, prevB, prevA);
+            RenderSystem.setShaderColor(prevR, prevG, prevB, prevA);
             context.pose().popPose();
         }
     }

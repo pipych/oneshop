@@ -24,6 +24,11 @@ public class InventoryHighlightHandler {
 
     @SubscribeEvent
     public static void onRenderContainerForeground(ContainerScreenEvent.Render.Foreground event) {
+        if (!Screen.hasShiftDown() && highlightAlpha <= 0.001f) {
+            lastFrameNanos = Util.getNanos();
+            return;
+        }
+
         long now = Util.getNanos();
         float dt = (lastFrameNanos == -1L) ? 0.0f : (now - lastFrameNanos) / 1_000_000_000.0f;
         lastFrameNanos = now;
@@ -47,6 +52,9 @@ public class InventoryHighlightHandler {
         int alphaInt = (int) (highlightAlpha * 255.0f) & 0xFF;
         int borderColor = (alphaInt << 24) | 0x2ECC71;
 
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+
         for (Slot slot : event.getContainerScreen().getMenu().slots) {
             if (slot == null || !slot.isActive() || !slot.hasItem()) {
                 continue;
@@ -55,7 +63,6 @@ public class InventoryHighlightHandler {
             ItemStack stack = slot.getItem();
             OptionalDouble priceOpt = ClientShopCache.getSellPrice(stack);
             if (priceOpt.isPresent() && priceOpt.getAsDouble() > 0) {
-                RenderSystem.enableBlend();
                 event.getGuiGraphics().renderOutline(slot.x, slot.y, 16, 16, borderColor);
             }
         }

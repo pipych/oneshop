@@ -33,6 +33,9 @@ public class ShopSavedData extends SavedData {
     public static final Codec<List<ShopCategory>> CATEGORIES_CODEC = ShopCategory.CODEC.listOf();
 
     private final Map<String, ShopCategory> categories = new LinkedHashMap<>();
+    private List<ShopCategory> cachedSortedCategories = null;
+    private final Map<String, ShopEntry> entryLookupCache = new java.util.HashMap<>();
+    private int dataVersion = 1;
 
     public ShopSavedData() {
     }
@@ -136,11 +139,27 @@ public class ShopSavedData extends SavedData {
         return data;
     }
 
+    @Override
+    public synchronized void setDirty() {
+        this.dataVersion++;
+        this.cachedSortedCategories = null;
+        this.entryLookupCache.clear();
+        super.setDirty();
+    }
+
+    public synchronized int getDataVersion() {
+        return this.dataVersion;
+    }
+
     // Category Accessors & Mutators
     public synchronized List<ShopCategory> getCategories() {
+        if (this.cachedSortedCategories != null) {
+            return this.cachedSortedCategories;
+        }
         List<ShopCategory> list = new ArrayList<>(this.categories.values());
         list.sort(Comparator.comparingInt(ShopCategory::sortOrder).thenComparing(ShopCategory::id));
-        return Collections.unmodifiableList(list);
+        this.cachedSortedCategories = Collections.unmodifiableList(list);
+        return this.cachedSortedCategories;
     }
 
     public synchronized Optional<ShopCategory> getCategory(String categoryId) {
@@ -163,9 +182,15 @@ public class ShopSavedData extends SavedData {
 
     // Entry Accessors & Mutators
     public synchronized Optional<ShopEntry> getEntry(String entryId) {
+        if (entryId == null) return Optional.empty();
+        ShopEntry cached = this.entryLookupCache.get(entryId);
+        if (cached != null) {
+            return Optional.of(cached);
+        }
         for (ShopCategory category : this.categories.values()) {
             Optional<ShopEntry> entry = category.findEntry(entryId);
             if (entry.isPresent()) {
+                this.entryLookupCache.put(entryId, entry.get());
                 return entry;
             }
         }

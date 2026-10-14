@@ -39,10 +39,8 @@ public class ShopTooltipHandler {
 
         OptionalDouble priceOpt = ClientShopCache.getSellPrice(stack);
         if (priceOpt.isPresent() && priceOpt.getAsDouble() > 0) {
-            long price = (long) priceOpt.getAsDouble();
-            if (price > 0) {
-                event.getTooltipElements().add(Either.right(new SellPriceTooltip(price)));
-            }
+            double price = priceOpt.getAsDouble();
+            event.getTooltipElements().add(Either.right(new SellPriceTooltip(price)));
         }
     }
 }

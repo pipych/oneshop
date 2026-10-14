@@ -24,8 +24,11 @@ import java.util.OptionalDouble;
  * Strictly uses functional trade items and tags, never visual display icons.
  */
 public final class ClientShopCache {
+    private record TagPriceEntry(TagKey<Item> tagKey, double price) {}
+
     private static List<ShopCategory> categories = List.of();
     private static Map<Item, Double> itemSellPrices = Map.of();
+    private static List<TagPriceEntry> tagSellPrices = List.of();
 
     private ClientShopCache() {}
 
@@ -98,16 +101,11 @@ public final class ClientShopCache {
             return OptionalDouble.of(price);
         }
 
-        // Dynamic tag fallback lookup: check if stack matches any functional tag
+        // Dynamic tag fallback lookup: iterate only over pre-computed tag sell prices
         double maxPrice = -1.0;
-        for (ShopCategory category : categories) {
-            for (ShopEntry entry : category.entries()) {
-                if (!entry.isSellAllowed()) {
-                    continue;
-                }
-                if (entry.matchesTradeItem(stack)) {
-                    maxPrice = Math.max(maxPrice, entry.sellPrice());
-                }
+        for (TagPriceEntry tp : tagSellPrices) {
+            if (stack.is(tp.tagKey())) {
+                maxPrice = Math.max(maxPrice, tp.price());
             }
         }
         if (maxPrice > 0) {
@@ -151,6 +149,7 @@ public final class ClientShopCache {
      */
     private static void rebuildItemSellPrices() {
         Map<Item, Double> prices = new HashMap<>();
+        List<TagPriceEntry> tagList = new java.util.ArrayList<>();
         for (ShopCategory category : categories) {
             for (ShopEntry entry : category.entries()) {
                 if (!entry.isSellAllowed()) {
@@ -165,6 +164,7 @@ public final class ClientShopCache {
                             ResourceLocation tagLoc = ResourceLocation.tryParse(cleanTag);
                             if (tagLoc != null) {
                                 TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagLoc);
+                                tagList.add(new TagPriceEntry(tagKey, price));
                                 var tagOptional = BuiltInRegistries.ITEM.getTag(tagKey);
                                 if (tagOptional.isPresent()) {
                                     for (Holder<Item> holder : tagOptional.get()) {
@@ -208,6 +208,7 @@ public final class ClientShopCache {
                             ResourceLocation tagLoc = ResourceLocation.tryParse(cleanTag);
                             if (tagLoc != null) {
                                 TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagLoc);
+                                tagList.add(new TagPriceEntry(tagKey, price));
                                 var tagOptional = BuiltInRegistries.ITEM.getTag(tagKey);
                                 if (tagOptional.isPresent()) {
                                     for (Holder<Item> holder : tagOptional.get()) {
@@ -221,5 +222,6 @@ public final class ClientShopCache {
             }
         }
         itemSellPrices = Collections.unmodifiableMap(prices);
+        tagSellPrices = List.copyOf(tagList);
     }
 }

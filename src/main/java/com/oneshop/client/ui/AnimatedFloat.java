@@ -100,6 +100,9 @@ public final class AnimatedFloat {
 
     /** Advances the animation by the elapsed real time and returns the current value. */
     public float get() {
+        if (this.completionInvoked) {
+            return this.target;
+        }
         long now = System.nanoTime();
         long elapsedNanos = now - this.lastNanos;
         this.lastNanos = now;

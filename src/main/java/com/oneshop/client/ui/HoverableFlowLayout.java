@@ -41,7 +41,7 @@ public class HoverableFlowLayout extends FlowLayout implements Hoverable {
             return root.focusHandler();
         }
         var mc = Minecraft.getInstance();
-        if (mc.screen instanceof ShopScreen screen && screen.getFocusHandler() != null) {
+        if (mc.screen instanceof OneModUi screen && screen.getFocusHandler() != null) {
             return screen.getFocusHandler();
         }
         if (mc.screen instanceof IconPickerModal picker && picker.getFocusHandler() != null) {
@@ -55,9 +55,6 @@ public class HoverableFlowLayout extends FlowLayout implements Hoverable {
 
     @Override
     public void draw(io.wispforest.owo.ui.core.OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
-        if (this.focusHandler() == null) {
-            this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-        }
         RenderSystem.enableBlend();
         RenderSystem.defaultBlendFunc();
         super.draw(context, mouseX, mouseY, partialTicks, delta);
@@ -114,16 +111,6 @@ public class HoverableFlowLayout extends FlowLayout implements Hoverable {
             return false;
         }
         if (this.hoverCondition != null && !this.hoverCondition.getAsBoolean()) {
-            return false;
-        }
-        var mc = Minecraft.getInstance();
-        if (mc.screen == null) {
-            return false;
-        }
-        double mouseX = mc.mouseHandler.xpos() * (double) mc.getWindow().getGuiScaledWidth() / (double) mc.getWindow().getScreenWidth();
-        double mouseY = mc.mouseHandler.ypos() * (double) mc.getWindow().getGuiScaledHeight() / (double) mc.getWindow().getScreenHeight();
-        if (!isMouseOver(mouseX, mouseY)) {
-            this.isHoveredState = false;
             return false;
         }
         return true;

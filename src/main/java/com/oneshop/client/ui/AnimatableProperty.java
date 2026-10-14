@@ -20,6 +20,7 @@ public final class AnimatableProperty<T extends Number> {
     private final io.wispforest.owo.ui.core.AnimatableProperty<NumberValue> inner;
     private final Class<T> clazz;
     private double target;
+    private T cachedTargetBoxed;
     private long lastNanos;
     private Runnable onCompleteCallback;
     private boolean completionInvoked = true;
@@ -27,6 +28,7 @@ public final class AnimatableProperty<T extends Number> {
     private AnimatableProperty(Class<T> clazz, double initial) {
         this.clazz = clazz;
         this.target = initial;
+        this.cachedTargetBoxed = cast(initial);
         this.inner = io.wispforest.owo.ui.core.AnimatableProperty.of(new NumberValue(initial));
         this.lastNanos = System.nanoTime();
     }
@@ -46,6 +48,7 @@ public final class AnimatableProperty<T extends Number> {
     public AnimatableProperty<T> animate(int durationMs, Easing easing, T targetValue) {
         double t = targetValue != null ? targetValue.doubleValue() : 0.0;
         this.target = t;
+        this.cachedTargetBoxed = targetValue != null ? targetValue : cast(0.0);
         this.lastNanos = System.nanoTime();
         this.completionInvoked = false;
 
@@ -94,6 +97,7 @@ public final class AnimatableProperty<T extends Number> {
     public void snapTo(T value) {
         double v = value != null ? value.doubleValue() : 0.0;
         this.target = v;
+        this.cachedTargetBoxed = value != null ? value : cast(0.0);
         this.completionInvoked = true;
         this.inner.animate(1, Easing.LINEAR, new NumberValue(v));
         this.inner.set(new NumberValue(v));
@@ -104,10 +108,13 @@ public final class AnimatableProperty<T extends Number> {
     }
 
     public T target() {
-        return cast(this.target);
+        return this.cachedTargetBoxed;
     }
 
     public T get() {
+        if (this.completionInvoked) {
+            return this.cachedTargetBoxed;
+        }
         long now = System.nanoTime();
         long elapsedNanos = now - this.lastNanos;
         this.lastNanos = now;

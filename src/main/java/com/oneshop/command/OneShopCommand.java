@@ -73,7 +73,7 @@ public class OneShopCommand {
         }
 
         PlayerAccountService.syncBalance(player);
-        ShopTransactionService.syncShopData(player);
+        ShopTransactionService.syncShopDataIfChanged(player);
         PacketDistributor.sendToPlayer(player, new S2COpenShopScreenPayload(true));
         return 1;
     }
@@ -205,6 +205,8 @@ public class OneShopCommand {
             source.sendFailure(Component.literal("Shop entry not found: " + id));
             return 0;
         }
+
+        com.oneshop.service.ShopTransactionService.broadcastShopData(source.getServer());
 
         String stockStr = amount == -1 ? "Unlimited" : String.valueOf(amount);
         source.sendSuccess(() -> Component.literal("Updated stock for '" + id + "' to " + stockStr).withStyle(ChatFormatting.GREEN), true);

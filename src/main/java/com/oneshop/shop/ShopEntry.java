@@ -12,6 +12,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -75,6 +76,81 @@ public record ShopEntry(
                     iconOpt.orElse(null),
                     customTitle, targetItem)
     ));
+
+    private static final java.util.Map<String, TagKey<Item>> TAG_KEY_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final TagKey<Item> INVALID_TAG = TagKey.create(Registries.ITEM, ResourceLocation.fromNamespaceAndPath("oneshop", "invalid_tag"));
+    private static final java.util.Map<String, Item> ITEM_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public static TagKey<Item> parseTagKey(String tagStr) {
+        if (tagStr == null || tagStr.isBlank()) return null;
+        String clean = tagStr.trim();
+        if (clean.startsWith("#")) clean = clean.substring(1).trim();
+        if (clean.isEmpty()) return null;
+        TagKey<Item> tag = TAG_KEY_CACHE.computeIfAbsent(clean, s -> {
+            try {
+                ResourceLocation loc = ResourceLocation.tryParse(s);
+                return loc != null ? TagKey.create(Registries.ITEM, loc) : INVALID_TAG;
+            } catch (Throwable t) {
+                return INVALID_TAG;
+            }
+        });
+        return tag == INVALID_TAG ? null : tag;
+    }
+
+    public static Item parseItem(String itemStr) {
+        if (itemStr == null || itemStr.isBlank() || itemStr.startsWith("#")) return null;
+        String clean = itemStr.trim();
+        Item item = ITEM_CACHE.computeIfAbsent(clean, s -> {
+            try {
+                ResourceLocation loc = ResourceLocation.tryParse(s);
+                if (loc != null) {
+                    Item regItem = BuiltInRegistries.ITEM.get(loc);
+                    return (regItem != null && regItem != Items.AIR) ? regItem : Items.AIR;
+                }
+            } catch (Throwable ignored) {}
+            return Items.AIR;
+        });
+        return item == Items.AIR ? null : item;
+    }
+
+    private static final java.util.Map<ShopEntry, String> SEARCH_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public boolean matchesSearch(String lowerQuery) {
+        if (lowerQuery == null || lowerQuery.isEmpty()) {
+            return true;
+        }
+        String searchIndex = SEARCH_CACHE.computeIfAbsent(this, e -> {
+            StringBuilder sb = new StringBuilder();
+            if (e.id() != null) sb.append(e.id().toLowerCase(Locale.ROOT)).append(' ');
+            if (e.customTitle() != null) sb.append(e.customTitle().toLowerCase(Locale.ROOT)).append(' ');
+            if (e.targetItem() != null) sb.append(e.targetItem().toLowerCase(Locale.ROOT)).append(' ');
+            if (!e.item().isEmpty()) {
+                sb.append(e.item().getHoverName().getString().toLowerCase(Locale.ROOT)).append(' ');
+                sb.append(BuiltInRegistries.ITEM.getKey(e.item().getItem()).toString().toLowerCase(Locale.ROOT)).append(' ');
+            }
+            if (e.icon() != null) {
+                if (e.icon().isItem() && !e.icon().item().isEmpty()) {
+                    sb.append(e.icon().item().getHoverName().getString().toLowerCase(Locale.ROOT)).append(' ');
+                } else if (e.icon().isTexture() && e.icon().texture() != null) {
+                    sb.append(e.icon().texture().toString().toLowerCase(Locale.ROOT)).append(' ');
+                    sb.append(e.icon().texture().getPath().toLowerCase(Locale.ROOT)).append(' ');
+                }
+            }
+            if (e.hasTags()) {
+                for (String t : e.tags()) {
+                    if (t != null) sb.append(t.toLowerCase(Locale.ROOT)).append(' ');
+                }
+            }
+            return sb.toString();
+        });
+        return searchIndex.contains(lowerQuery);
+    }
+
+    public static void clearCaches() {
+        TAG_KEY_CACHE.clear();
+        ITEM_CACHE.clear();
+        SEARCH_CACHE.clear();
+    }
 
     public ShopEntry {
         if (id == null || id.isBlank()) {
@@ -241,42 +317,24 @@ public record ShopEntry(
         }
         String fid = getFunctionalItemId();
         if (fid != null && fid.startsWith("#")) {
-            try {
-                ResourceLocation tagLoc = ResourceLocation.tryParse(fid.substring(1));
-                if (tagLoc != null) {
-                    TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagLoc);
-                    if (stack.is(tagKey)) {
-                        return true;
-                    }
-                }
-            } catch (Throwable ignored) {}
+            TagKey<Item> tagKey = parseTagKey(fid);
+            if (tagKey != null && stack.is(tagKey)) {
+                return true;
+            }
         }
         if (hasTags()) {
             for (String tagStr : tags) {
-                if (tagStr == null || tagStr.isBlank()) continue;
-                try {
-                    String clean = tagStr.trim();
-                    if (clean.startsWith("#")) clean = clean.substring(1);
-                    ResourceLocation tagLoc = ResourceLocation.tryParse(clean);
-                    if (tagLoc != null) {
-                        TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagLoc);
-                        if (stack.is(tagKey)) {
-                            return true;
-                        }
-                    }
-                } catch (Throwable ignored) {}
+                TagKey<Item> tagKey = parseTagKey(tagStr);
+                if (tagKey != null && stack.is(tagKey)) {
+                    return true;
+                }
             }
         }
         if (fid != null && !fid.isBlank() && !fid.startsWith("#")) {
-            try {
-                ResourceLocation loc = ResourceLocation.tryParse(fid);
-                if (loc != null) {
-                    Item regItem = BuiltInRegistries.ITEM.get(loc);
-                    if (regItem != null && regItem != Items.AIR) {
-                        return stack.is(regItem);
-                    }
-                }
-            } catch (Throwable ignored) {}
+            Item regItem = parseItem(fid);
+            if (regItem != null) {
+                return stack.is(regItem);
+            }
         }
         return false;
     }
@@ -300,26 +358,18 @@ public record ShopEntry(
         String fid = getFunctionalItemId();
         if (fid != null && !fid.isBlank()) {
             if (fid.startsWith("#")) {
-                try {
-                    ResourceLocation tagLoc = ResourceLocation.tryParse(fid.substring(1));
-                    if (tagLoc != null) {
-                        TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagLoc);
-                        var holders = BuiltInRegistries.ITEM.getTag(tagKey);
-                        if (holders.isPresent() && holders.get().size() > 0) {
-                            return new ItemStack(holders.get().get(0).value());
-                        }
+                TagKey<Item> tagKey = parseTagKey(fid);
+                if (tagKey != null) {
+                    var holders = BuiltInRegistries.ITEM.getTag(tagKey);
+                    if (holders.isPresent() && holders.get().size() > 0) {
+                        return new ItemStack(holders.get().get(0).value());
                     }
-                } catch (Throwable ignored) {}
+                }
             } else {
-                try {
-                    ResourceLocation loc = ResourceLocation.tryParse(fid);
-                    if (loc != null) {
-                        Item regItem = BuiltInRegistries.ITEM.get(loc);
-                        if (regItem != null && regItem != Items.AIR) {
-                            return new ItemStack(regItem);
-                        }
-                    }
-                } catch (Throwable ignored) {}
+                Item regItem = parseItem(fid);
+                if (regItem != null) {
+                    return new ItemStack(regItem);
+                }
             }
         }
         return ItemStack.EMPTY;

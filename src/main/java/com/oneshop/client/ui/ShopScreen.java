@@ -70,7 +70,7 @@ import java.util.function.Consumer;
  * focusable text inputs with keyboard event propagation, hover outlines,
  * detached high-z-index overlay layering, and full localization.
  */
-public class ShopScreen extends BaseOwoScreen<StackLayout> {
+public class ShopScreen extends OneModUi {
     private static final ResourceLocation CURRENCY_ICON_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(OneShop.MODID, "textures/gui/currency_icon.png");
     private static final ResourceLocation LOGO_SHOP_TEXTURE =
@@ -82,50 +82,18 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
     private String selectedCategoryId = "";
     private String searchQuery = "";
 
-    private static final int MODAL_SCRIM_ALPHA = 0x90;
-    private static final int OPEN_DURATION_MS = 210;
-    private static final int CLOSE_DURATION_MS = 170;
-
-    static class ModalEntry {
-        final FlowLayout modalBackdrop;
-        final FlowLayout dialog;
-        final AnimatableProperty<Float> alpha;
-        final AnimatedDialogWrapper wrapper;
-        boolean isClosing = false;
-
-        ModalEntry(FlowLayout modalBackdrop, FlowLayout dialog, AnimatableProperty<Float> alpha, AnimatedDialogWrapper wrapper) {
-            this.modalBackdrop = modalBackdrop;
-            this.dialog = dialog;
-            this.alpha = alpha;
-            this.wrapper = wrapper;
-        }
-    }
-
-    private StackLayout rootStack;
     private FlowLayout sidebarCategories;
     /** Per-category selection highlight (0..1); kept here because tabs are rebuilt on each refresh. */
     private final java.util.Map<String, AnimatedFloat> tabSelection = new java.util.HashMap<>();
     /** Per-category active indicator alpha (0.0f..1.0f). */
     private final java.util.Map<String, AnimatableProperty<Float>> categoryIndicatorAlpha = new java.util.HashMap<>();
 
-    private final AnimatableProperty<Float> windowAlpha = AnimatableProperty.of(0.0f);
-    private boolean isClosing = false;
-    private ModalEntry currentModal = null;
-    private final java.util.Deque<ModalEntry> modalEntryStack = new java.util.ArrayDeque<>();
-
-    private AnimatableProperty<Integer> slideOffsetY = AnimatableProperty.of(0);
-    private AnimatableProperty<Float> backdropProgress;
-    private static java.lang.reflect.Field blurEffectField = null;
-    private static boolean blurEffectFieldLookupDone = false;
     private FlowLayout itemGridContainer;
     private LabelComponent balanceLabel;
-    private io.wispforest.owo.ui.core.Component activeModal = null;
-    private final java.util.Deque<io.wispforest.owo.ui.core.Component> modalStack = new java.util.ArrayDeque<>();
+    private double lastDisplayedBalance = Double.NaN;
 
     private TextBoxComponent searchBox;
     private FocusableWidgetComponent wrappedSearch;
-    private int currentMouseX;
-    private int currentMouseY;
     private int lastGridWidth = 0;
 
     public ShopScreen(boolean isAdmin) {
@@ -136,141 +104,20 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         this(false);
     }
 
-    @Override
-    protected @NotNull OwoUIAdapter<StackLayout> createAdapter() {
-        return OwoUIAdapter.create(this, Containers::stack);
-    }
-
-    public boolean isModalOpen() {
-        return this.currentModal != null && !this.currentModal.isClosing;
+    public static ModalBackdrop createModalBackdrop() {
+        return OneModUi.createModalBackdrop();
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
-        float alpha = Math.max(0.0f, Math.min(1.0f, this.windowAlpha.get()));
-        if (this.minecraft != null && alpha > 0.001f) {
-            renderAnimatedBlur(delta, alpha);
-        }
-        int scrimAlpha = Math.round(0x80 * alpha);
-        if (scrimAlpha > 0) {
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            context.fill(0, 0, this.width, this.height, (scrimAlpha << 24) | 0x101010);
-        }
-
-        this.currentMouseX = mouseX;
-        this.currentMouseY = mouseY;
+    protected void onFrameUpdate(int mouseX, int mouseY, float delta) {
         if (this.itemGridContainer != null && this.itemGridContainer.width() > 0 && this.lastGridWidth != this.itemGridContainer.width()) {
             this.lastGridWidth = this.itemGridContainer.width();
             refreshItemGrid();
         }
-
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
-        context.setColor(1.0f, 1.0f, 1.0f, alpha);
-        super.render(context, mouseX, mouseY, delta);
-        context.setColor(1.0f, 1.0f, 1.0f, 1.0f);
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-    }
-
-    private void renderAnimatedBlur(float delta, float progress) {
-        if (this.minecraft == null || this.minecraft.gameRenderer == null) return;
-        int blurriness = this.minecraft.options.getMenuBackgroundBlurriness();
-        if (blurriness < 1) return;
-
-        try {
-            RenderSystem.disableDepthTest();
-            boolean customApplied = false;
-            if (!blurEffectFieldLookupDone) {
-                blurEffectFieldLookupDone = true;
-                try {
-                    for (java.lang.reflect.Field f : net.minecraft.client.renderer.GameRenderer.class.getDeclaredFields()) {
-                        if (net.minecraft.client.renderer.PostChain.class.isAssignableFrom(f.getType())) {
-                            f.setAccessible(true);
-                            if ("blurEffect".equals(f.getName()) || f.getName().toLowerCase(Locale.ROOT).contains("blur")) {
-                                blurEffectField = f;
-                                break;
-                            } else if (blurEffectField == null) {
-                                blurEffectField = f;
-                            }
-                        }
-                    }
-                } catch (Throwable ignored) {}
-            }
-            if (blurEffectField != null) {
-                net.minecraft.client.renderer.PostChain postChain =
-                        (net.minecraft.client.renderer.PostChain) blurEffectField.get(this.minecraft.gameRenderer);
-                if (postChain != null) {
-                    postChain.setUniform("Radius", Math.max(0.01f, blurriness * progress));
-                    postChain.process(delta);
-                    customApplied = true;
-                }
-            }
-            if (!customApplied) {
-                this.minecraft.gameRenderer.processBlurEffect(delta * progress);
-            }
-            this.minecraft.getMainRenderTarget().bindWrite(false);
-        } catch (Throwable e) {
-            this.renderBlurredBackground(delta);
-        }
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (this.isClosing || (this.currentModal != null && this.currentModal.isClosing)) return true;
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (this.isClosing || (this.currentModal != null && this.currentModal.isClosing)) return true;
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (this.isClosing || (this.currentModal != null && this.currentModal.isClosing)) return true;
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (this.isClosing || (this.currentModal != null && this.currentModal.isClosing)) return true;
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-    }
-
-    @Override
-    public void mouseMoved(double mouseX, double mouseY) {
-        if (this.isClosing || (this.currentModal != null && this.currentModal.isClosing)) return;
-        super.mouseMoved(mouseX, mouseY);
-    }
-
-    public io.wispforest.owo.ui.util.FocusHandler getFocusHandler() {
-        if (this.uiAdapter == null || this.uiAdapter.rootComponent == null) {
-            return null;
-        }
-        return this.uiAdapter.rootComponent.focusHandler();
-    }
-
-    public void unfocusActiveTextFields() {
-        if (this.uiAdapter == null) return;
-        try {
-            var focusHandler = getFocusHandler();
-            if (focusHandler != null) {
-                var focused = focusHandler.focused();
-                if (focused instanceof FocusableWidgetComponent f) {
-                    f.onFocusLost();
-                    if (f.getInnerWidget() != null) {
-                        f.getInnerWidget().setFocused(false);
-                    }
-                } else if (focused instanceof EditBox e) {
-                    e.setFocused(false);
-                }
-                focusHandler.focus(null, io.wispforest.owo.ui.core.Component.FocusSource.MOUSE_CLICK);
-            }
-        } catch (Throwable ignored) {}
-
+    protected void onUnfocusExtraFields() {
         if (this.searchBox != null) {
             this.searchBox.setFocused(false);
         }
@@ -280,177 +127,22 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
                 this.wrappedSearch.getInnerWidget().setFocused(false);
             }
         }
-        StackLayout root = this.uiAdapter != null && this.uiAdapter.rootComponent != null
-                ? this.uiAdapter.rootComponent
-                : this.rootStack;
-        if (root != null) {
-            try {
-                var descendants = new java.util.ArrayList<io.wispforest.owo.ui.core.Component>();
-                root.collectDescendants(descendants);
-                for (var c : descendants) {
-                    if (c instanceof FocusableWidgetComponent f) {
-                        f.onFocusLost();
-                        if (f.getInnerWidget() != null) {
-                            f.getInnerWidget().setFocused(false);
-                        }
-                    } else if (c instanceof EditBox e) {
-                        e.setFocused(false);
-                    }
-                }
-            } catch (Throwable ignored) {}
-        }
-        if (this.currentModal != null && this.currentModal.modalBackdrop != null) {
-            try {
-                var descendants = new java.util.ArrayList<io.wispforest.owo.ui.core.Component>();
-                this.currentModal.modalBackdrop.collectDescendants(descendants);
-                for (var c : descendants) {
-                    if (c instanceof FocusableWidgetComponent f) {
-                        f.onFocusLost();
-                        if (f.getInnerWidget() != null) {
-                            f.getInnerWidget().setFocused(false);
-                        }
-                    } else if (c instanceof EditBox e) {
-                        e.setFocused(false);
-                    }
-                }
-            } catch (Throwable ignored) {}
-        }
-        for (ModalEntry entry : this.modalEntryStack) {
-            if (entry != null && entry.modalBackdrop != null) {
-                try {
-                    var descendants = new java.util.ArrayList<io.wispforest.owo.ui.core.Component>();
-                    entry.modalBackdrop.collectDescendants(descendants);
-                    for (var c : descendants) {
-                        if (c instanceof FocusableWidgetComponent f) {
-                            f.onFocusLost();
-                            if (f.getInnerWidget() != null) {
-                                f.getInnerWidget().setFocused(false);
-                            }
-                        } else if (c instanceof EditBox e) {
-                            e.setFocused(false);
-                        }
-                    }
-                } catch (Throwable ignored) {}
-            }
-        }
     }
 
-    public static class ModalBackdrop extends FlowLayout {
-        public ModalBackdrop() {
-            super(Sizing.fill(100), Sizing.fill(100), Algorithm.VERTICAL);
-            this.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
-        }
-
-        @Override
-        public boolean canFocus(io.wispforest.owo.ui.core.Component.FocusSource source) {
-            return false;
-        }
-
-        @Override
-        public io.wispforest.owo.ui.util.FocusHandler focusHandler() {
-            var handler = super.focusHandler();
-            if (handler != null) return handler;
-            ParentComponent p = this.parent();
-            if (p != null && p.focusHandler() != null) {
-                return p.focusHandler();
-            }
-            var root = this.root();
-            if (root != null && root != this && root.focusHandler() != null) {
-                return root.focusHandler();
-            }
-            var mc = Minecraft.getInstance();
-            if (mc.screen instanceof ShopScreen screen && screen.getFocusHandler() != null) {
-                return screen.getFocusHandler();
-            }
-            if (this.focusHandler == null) {
-                this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-            }
-            return this.focusHandler;
-        }
-
-        @Override
-        public void draw(io.wispforest.owo.ui.core.OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
-            if (this.focusHandler() == null) {
-                this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-            }
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            super.draw(context, mouseX, mouseY, partialTicks, delta);
-        }
-    }
-
-    public static ModalBackdrop createModalBackdrop() {
-        return new ModalBackdrop();
-    }
-
-    public boolean isAnyTextBoxFocused() {
-        if (this.isClosing) return false;
+    @Override
+    protected boolean isExtraTextBoxFocused() {
         if (this.searchBox != null && this.searchBox.isFocused()) {
             return true;
         }
         if (this.wrappedSearch != null && this.wrappedSearch.isWidgetFocused()) {
             return true;
         }
-        var focusHandler = getFocusHandler();
-        if (focusHandler != null) {
-            io.wispforest.owo.ui.core.Component focused = focusHandler.focused();
-            if (focused instanceof FocusableWidgetComponent f && f.isWidgetFocused()) {
-                return true;
-            }
-            if (focused instanceof EditBox e && e.isFocused()) {
-                return true;
-            }
-        }
-        if (isModalOpen() && this.activeModal instanceof io.wispforest.owo.ui.core.ParentComponent parent) {
-            var children = new java.util.ArrayList<io.wispforest.owo.ui.core.Component>();
-            parent.collectDescendants(children);
-            for (io.wispforest.owo.ui.core.Component c : children) {
-                if (c instanceof FocusableWidgetComponent f && f.isWidgetFocused()) {
-                    return true;
-                }
-                if (c instanceof EditBox e && e.isFocused()) {
-                    return true;
-                }
-            }
-        }
         return false;
-    }
-
-    public boolean isComponentHovered(io.wispforest.owo.ui.core.Component comp) {
-        if (isModalOpen() && !isComponentInModal(comp)) {
-            return false;
-        }
-        if (!comp.isInBoundingBox(currentMouseX, currentMouseY)) {
-            return false;
-        }
-        io.wispforest.owo.ui.core.ParentComponent parent = comp.parent();
-        while (parent != null) {
-            if (!parent.isInBoundingBox(currentMouseX, currentMouseY)) {
-                return false;
-            }
-            parent = parent.parent();
-        }
-        return true;
     }
 
     @Override
     protected void build(StackLayout root) {
-        this.rootStack = root;
-        root.surface(Surface.BLANK);
-
-        // Screen entrance animation: windowAlpha animates 0.0f -> 1.0f over 210ms (Easing.CUBIC)
-        this.isClosing = false;
-        this.windowAlpha.set(0.0f);
-        this.windowAlpha.animate(OPEN_DURATION_MS, Easing.CUBIC, 1.0f);
-        this.backdropProgress = this.windowAlpha;
-        this.slideOffsetY = AnimatableProperty.of(0);
-
-        // Main Window Frame (Bedrock Slate #313233 with 1px beveled border)
-        FlowLayout mainFrame = Containers.verticalFlow(Sizing.fill(92), Sizing.fill(92));
-        mainFrame.surface(BedrockTheme.PANEL);
-        mainFrame.padding(Insets.of(6));
-        mainFrame.positioning(Positioning.relative(50, 50));
-        root.child(mainFrame);
+        FlowLayout mainFrame = setupRootWindow(root, 92, 92);
 
         // Header
         mainFrame.child(buildHeader());
@@ -497,9 +189,7 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         int logoWidth = isAdmin ? 70 : 94;
         int logoHeight = isAdmin ? 22 : 18;
 
-        var logoComponent = Components.texture(logoTexture, 0, 0, texWidth, texHeight, texWidth, texHeight);
-        logoComponent.sizing(Sizing.fixed(logoWidth), Sizing.fixed(logoHeight));
-        logoComponent.blend(true);
+        var logoComponent = new TextureDisplayComponent(logoTexture, logoWidth, logoHeight, 0f, 0f, texWidth, texHeight, texWidth, texHeight);
         logoComponent.tooltip(Component.translatable(isAdmin ? "oneshop.gui.title_admin" : "oneshop.gui.title"));
         header.child(logoComponent);
 
@@ -513,8 +203,7 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         balanceBox.verticalAlignment(VerticalAlignment.CENTER);
         balanceBox.gap(3);
 
-        var currencyIcon = Components.texture(CURRENCY_ICON_TEXTURE, 0, 0, 8, 8, 8, 8);
-        currencyIcon.blend(true);
+        var currencyIcon = new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8);
         balanceBox.child(currencyIcon);
 
         this.balanceLabel = Components.label(getBalanceComponent());
@@ -625,7 +314,11 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
 
     public void updateBalanceDisplay() {
         if (this.balanceLabel != null) {
-            this.balanceLabel.text(getBalanceComponent());
+            double current = ClientBankCache.getBalance();
+            if (Double.compare(current, this.lastDisplayedBalance) != 0) {
+                this.lastDisplayedBalance = current;
+                this.balanceLabel.text(getBalanceComponent());
+            }
         }
     }
 
@@ -778,16 +471,7 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         }
 
         List<ShopEntry> filteredEntries = activeCat.entries().stream()
-                .filter(e -> {
-                    if (searchQuery.isEmpty()) return true;
-                    String id = e.id().toLowerCase(Locale.ROOT);
-                    String customTitle = e.customTitle().toLowerCase(Locale.ROOT);
-                    String name = !e.item().isEmpty() ? e.item().getHoverName().getString().toLowerCase(Locale.ROOT) : "";
-                    String iconName = e.icon().isItem() && !e.icon().item().isEmpty() ? e.icon().item().getHoverName().getString().toLowerCase(Locale.ROOT) : "";
-                    String texPath = e.icon().isTexture() ? e.icon().texture().getPath().toLowerCase(Locale.ROOT) : "";
-                    boolean matchesTag = e.tags().stream().anyMatch(t -> t.toLowerCase(Locale.ROOT).contains(searchQuery));
-                    return id.contains(searchQuery) || customTitle.contains(searchQuery) || name.contains(searchQuery) || iconName.contains(searchQuery) || texPath.contains(searchQuery) || matchesTag;
-                })
+                .filter(e -> searchQuery.isEmpty() || e.matchesSearch(searchQuery))
                 .toList();
 
         if (filteredEntries.isEmpty()) {
@@ -841,41 +525,44 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         card.surface(BedrockTheme.withHoverOutline(cardBaseSurface, 0, BedrockTheme.OUTLINE_HOVER));
 
         // Center: 32x32 scaled item component or texture component with full tooltip
-        LotIcon displayIcon = entry.getCustomIconTexture() != null
-                ? LotIcon.of(entry.getCustomIconTexture())
-                : LotIcon.of(entry.getDisplayIconStack());
+        LotIcon displayIcon = entry.getVisualIcon();
         LotIconDisplayComponent iconComponent = new LotIconDisplayComponent(displayIcon, 32);
-        Minecraft mc = Minecraft.getInstance();
-        Item.TooltipContext tooltipContext = mc.level != null ? Item.TooltipContext.of(mc.level) : Item.TooltipContext.EMPTY;
-        List<Component> tooltipLines = new java.util.ArrayList<>();
-        if (entry.hasCustomTitle()) {
-            tooltipLines.add(Component.literal(entry.customTitle()).withStyle(ChatFormatting.WHITE, ChatFormatting.BOLD));
-            if (entry.item().isEmpty() && entry.hasTags()) {
-                String tagsFormatted = String.join(", ", entry.tags().stream().map(t -> t.startsWith("#") ? t : "#" + t).toList());
-                tooltipLines.add(Component.literal("§eСкупка: §f" + tagsFormatted));
-            } else if (!entry.item().isEmpty()) {
-                List<Component> vanillaLines = entry.item().getTooltipLines(tooltipContext, mc.player, TooltipFlag.NORMAL);
-                if (vanillaLines.size() > 1) {
-                    tooltipLines.addAll(vanillaLines.subList(1, vanillaLines.size()));
+
+        boolean[] tooltipBuilt = {false};
+        card.mouseEnter().subscribe(() -> {
+            if (tooltipBuilt[0]) return;
+            tooltipBuilt[0] = true;
+            Minecraft mc = Minecraft.getInstance();
+            Item.TooltipContext tooltipContext = mc.level != null ? Item.TooltipContext.of(mc.level) : Item.TooltipContext.EMPTY;
+            List<Component> tooltipLines = new java.util.ArrayList<>();
+            if (entry.hasCustomTitle()) {
+                tooltipLines.add(Component.literal(entry.customTitle()).withStyle(ChatFormatting.WHITE, ChatFormatting.BOLD));
+                if (entry.item().isEmpty() && entry.hasTags()) {
+                    String tagsFormatted = String.join(", ", entry.tags().stream().map(t -> t.startsWith("#") ? t : "#" + t).toList());
+                    tooltipLines.add(Component.literal("§eСкупка: §f" + tagsFormatted));
+                } else if (!entry.item().isEmpty()) {
+                    List<Component> vanillaLines = entry.item().getTooltipLines(tooltipContext, mc.player, TooltipFlag.NORMAL);
+                    if (vanillaLines.size() > 1) {
+                        tooltipLines.addAll(vanillaLines.subList(1, vanillaLines.size()));
+                    }
+                }
+            } else {
+                if (!entry.item().isEmpty()) {
+                    tooltipLines.addAll(entry.item().getTooltipLines(tooltipContext, mc.player, TooltipFlag.NORMAL));
+                } else if (entry.hasTags()) {
+                    String tagsFormatted = String.join(", ", entry.tags().stream().map(t -> t.startsWith("#") ? t : "#" + t).toList());
+                    tooltipLines.add(Component.literal("§eСкупка: §f" + tagsFormatted));
+                } else if (entry.icon() != null && entry.icon().isTexture()) {
+                    tooltipLines.add(Component.literal(entry.icon().texture().getPath()).withStyle(ChatFormatting.BOLD, ChatFormatting.WHITE));
+                } else {
+                    tooltipLines.add(Component.literal(entry.id()).withStyle(ChatFormatting.BOLD, ChatFormatting.WHITE));
                 }
             }
-        } else {
-            if (!entry.item().isEmpty()) {
-                tooltipLines.addAll(entry.item().getTooltipLines(tooltipContext, mc.player, TooltipFlag.NORMAL));
-            } else if (entry.hasTags()) {
-                String tagsFormatted = String.join(", ", entry.tags().stream().map(t -> t.startsWith("#") ? t : "#" + t).toList());
-                tooltipLines.add(Component.literal("§eСкупка: §f" + tagsFormatted));
-            } else if (entry.icon() != null && entry.icon().isTexture()) {
-                tooltipLines.add(Component.literal(entry.icon().texture().getPath()).withStyle(ChatFormatting.BOLD, ChatFormatting.WHITE));
-            } else {
-                tooltipLines.add(Component.literal(entry.id()).withStyle(ChatFormatting.BOLD, ChatFormatting.WHITE));
+            if (entry.hasTags() && !entry.hasCustomTitle() && !entry.item().isEmpty()) {
+                tooltipLines.add(Component.translatable("oneshop.gui.tooltip.accepts_tags", String.join(", ", entry.tags())).withStyle(ChatFormatting.AQUA));
             }
-        }
-        if (entry.hasTags() && !entry.hasCustomTitle() && !entry.item().isEmpty()) {
-            tooltipLines.add(Component.translatable("oneshop.gui.tooltip.accepts_tags", String.join(", ", entry.tags())).withStyle(ChatFormatting.AQUA));
-        }
-        iconComponent.tooltip(tooltipLines);
-        card.tooltip(tooltipLines);
+            card.tooltip(tooltipLines);
+        });
         card.child(iconComponent);
 
         // Price row below the item icon
@@ -890,7 +577,7 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
             LabelComponent buyPriceLabel = Components.label(Component.translatable("oneshop.gui.price.buy_compact", formatCompactPrice(entry.buyPrice())));
             buyPriceLabel.color(Color.ofRgb(BedrockTheme.TEXT_GREEN));
             priceRow.child(buyPriceLabel);
-            priceRow.child(Components.texture(CURRENCY_ICON_TEXTURE, 0, 0, 8, 8, 8, 8).blend(true));
+            priceRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
 
             LabelComponent sep = Components.label(Component.literal("/"));
             sep.color(Color.ofRgb(BedrockTheme.TEXT_MUTED));
@@ -899,17 +586,17 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
             LabelComponent sellPriceLabel = Components.label(Component.translatable("oneshop.gui.price.sell_compact", formatCompactPrice(entry.sellPrice())));
             sellPriceLabel.color(Color.ofRgb(BedrockTheme.TEXT_GOLD));
             priceRow.child(sellPriceLabel);
-            priceRow.child(Components.texture(CURRENCY_ICON_TEXTURE, 0, 0, 8, 8, 8, 8).blend(true));
+            priceRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
         } else if (buyAllowed) {
             LabelComponent buyPriceLabel = Components.label(Component.literal(formatCompactPrice(entry.buyPrice())));
             buyPriceLabel.color(Color.ofRgb(BedrockTheme.TEXT_GREEN));
             priceRow.child(buyPriceLabel);
-            priceRow.child(Components.texture(CURRENCY_ICON_TEXTURE, 0, 0, 8, 8, 8, 8).blend(true));
+            priceRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
         } else if (sellAllowed) {
             LabelComponent sellPriceLabel = Components.label(Component.literal(formatCompactPrice(entry.sellPrice())));
             sellPriceLabel.color(Color.ofRgb(BedrockTheme.TEXT_GOLD));
             priceRow.child(sellPriceLabel);
-            priceRow.child(Components.texture(CURRENCY_ICON_TEXTURE, 0, 0, 8, 8, 8, 8).blend(true));
+            priceRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
         } else {
             LabelComponent noneLabel = Components.label(Component.translatable("oneshop.gui.price.sell_none"));
             noneLabel.color(Color.ofRgb(BedrockTheme.TEXT_MUTED));
@@ -1553,108 +1240,6 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         mountModal(modalBackdrop, dialog);
     }
 
-    private FlowLayout createLabeledInput(String labelTranslationKey, TextBoxComponent textBox, String hint) {
-        return createLabeledInput(labelTranslationKey, textBox, hint, null);
-    }
-
-    private FlowLayout createLabeledInput(String labelTranslationKey, TextBoxComponent textBox, String hint, BooleanSupplier isErrorSupplier) {
-        FlowLayout row = Containers.horizontalFlow(Sizing.fill(100), Sizing.fixed(18));
-        row.verticalAlignment(VerticalAlignment.CENTER);
-        row.gap(4);
-
-        LabelComponent label = Components.label(Component.translatable(labelTranslationKey));
-        label.color(Color.ofRgb(BedrockTheme.TEXT_WHITE));
-        label.sizing(Sizing.fixed(80), Sizing.content());
-        row.child(label);
-
-        HoverableFlowLayout inputFrame = new HoverableFlowLayout(Sizing.expand(100), Sizing.fixed(16), FlowLayout.Algorithm.HORIZONTAL);
-        inputFrame.hoverCondition(() -> !isModalOpen() || isComponentInModal(inputFrame));
-        inputFrame.padding(Insets.of(0, 0, 4, 4));
-        inputFrame.verticalAlignment(VerticalAlignment.CENTER);
-
-        textBox.setHint(Component.translatable(hint));
-        textBox.setBordered(false);
-        textBox.setCanLoseFocus(true);
-
-        FocusableWidgetComponent wrapped = new FocusableWidgetComponent(textBox);
-        wrapped.sizing(Sizing.fill(100), Sizing.fill(100));
-        wrapped.verticalAlignment(VerticalAlignment.CENTER);
-
-        Surface baseSurface = (context, comp) -> {
-            int x = comp.x(), y = comp.y(), w = comp.width(), h = comp.height();
-            BedrockTheme.drawBeveledBox(context, x, y, w, h, BedrockTheme.BG_INPUT, BedrockTheme.BORDER_DARK, BedrockTheme.BORDER_LIGHT);
-            if (isErrorSupplier != null && isErrorSupplier.getAsBoolean()) {
-                BedrockTheme.drawOutline(context, x, y, w, h, BedrockTheme.TEXT_RED);
-            }
-        };
-        inputFrame.surface(BedrockTheme.withHoverOutline(baseSurface, () -> (inputFrame.isHovered() || wrapped.isWidgetFocused()) && !(isErrorSupplier != null && isErrorSupplier.getAsBoolean()), 0, BedrockTheme.OUTLINE_HOVER));
-
-        inputFrame.mouseDown().subscribe((mouseX, mouseY, button) -> {
-            wrapped.focus();
-            return false;
-        });
-
-        wrapped.mouseDown().subscribe((mouseX, mouseY, button) -> {
-            wrapped.focus();
-            return false;
-        });
-
-        inputFrame.child(wrapped);
-        row.child(inputFrame);
-        return row;
-    }
-
-    boolean isComponentInModal(io.wispforest.owo.ui.core.Component c) {
-        if (!isModalOpen()) return false;
-        io.wispforest.owo.ui.core.ParentComponent parent = c instanceof io.wispforest.owo.ui.core.ParentComponent p ? p : c.parent();
-        while (parent != null) {
-            if (this.currentModal != null && parent == this.currentModal.modalBackdrop) return true;
-            if (parent == this.activeModal) return true;
-            for (ModalEntry stacked : this.modalEntryStack) {
-                if (parent == stacked.modalBackdrop) return true;
-            }
-            for (io.wispforest.owo.ui.core.Component stacked : this.modalStack) {
-                if (parent == stacked) return true;
-            }
-            parent = parent.parent();
-        }
-        return false;
-    }
-
-    HoverableFlowLayout createNumericInputFrame(TextBoxComponent textBox, FocusableWidgetComponent[] outWrapped, int width) {
-        textBox.setBordered(false);
-        textBox.setCanLoseFocus(true);
-
-        FocusableWidgetComponent wrapped = new FocusableWidgetComponent(textBox);
-        wrapped.sizing(Sizing.fill(100), Sizing.fill(100));
-        wrapped.verticalAlignment(VerticalAlignment.CENTER);
-        if (outWrapped != null && outWrapped.length > 0) {
-            outWrapped[0] = wrapped;
-        }
-
-        HoverableFlowLayout inputFrame = new HoverableFlowLayout(Sizing.fixed(width), Sizing.fixed(18), FlowLayout.Algorithm.HORIZONTAL);
-        inputFrame.hoverCondition(() -> !isModalOpen() || isComponentInModal(inputFrame));
-        inputFrame.padding(Insets.of(0, 0, 4, 4));
-        inputFrame.verticalAlignment(VerticalAlignment.CENTER);
-
-        Surface baseSurface = (context, comp) -> {
-            int x = comp.x(), y = comp.y(), w = comp.width(), h = comp.height();
-            BedrockTheme.drawBeveledBox(context, x, y, w, h, BedrockTheme.BG_INPUT, BedrockTheme.BORDER_DARK, BedrockTheme.BORDER_LIGHT);
-        };
-        inputFrame.surface(BedrockTheme.withHoverOutline(baseSurface, () -> inputFrame.isHovered() || wrapped.isWidgetFocused(), 0, BedrockTheme.OUTLINE_HOVER));
-
-        inputFrame.mouseDown().subscribe((mouseX, mouseY, button) -> {
-            wrapped.focus();
-            return false;
-        });
-        wrapped.mouseDown().subscribe((mouseX, mouseY, button) -> {
-            wrapped.focus();
-            return false;
-        });
-
-        inputFrame.child(wrapped);
-        return inputFrame;
-    }
 
     // --- Quantity Selector Modal Dialog ---
 
@@ -1719,9 +1304,7 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         // Item preview
         FlowLayout previewRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
         previewRow.verticalAlignment(VerticalAlignment.CENTER);
-        LotIcon modalDisplayIcon = entry.getCustomIconTexture() != null
-                ? LotIcon.of(entry.getCustomIconTexture())
-                : LotIcon.of(entry.getDisplayIconStack());
+        LotIcon modalDisplayIcon = entry.getVisualIcon();
         previewRow.child(new LotIconDisplayComponent(modalDisplayIcon, 16));
         previewRow.child(Components.label(displayName).color(Color.ofRgb(BedrockTheme.TEXT_WHITE)));
         dialog.child(previewRow);
@@ -2144,252 +1727,6 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
         mountModal(overlay, dialog);
     }
 
-    public void popModal() {
-        if (this.currentModal == null || this.currentModal.isClosing) {
-            return;
-        }
-        unfocusActiveTextFields();
-        final ModalEntry closingModal = this.currentModal;
-        closingModal.isClosing = true;
-
-        closingModal.alpha.animate(CLOSE_DURATION_MS, Easing.CUBIC, 0.0f).onComplete(() -> {
-            StackLayout root = this.uiAdapter != null && this.uiAdapter.rootComponent != null
-                    ? this.uiAdapter.rootComponent
-                    : this.rootStack;
-            if (root != null) {
-                root.removeChild(closingModal.modalBackdrop);
-            }
-            if (!this.modalEntryStack.isEmpty()) {
-                this.currentModal = this.modalEntryStack.pop();
-                this.activeModal = this.currentModal.modalBackdrop;
-                if (root != null && !root.children().contains(this.currentModal.modalBackdrop)) {
-                    root.child(this.currentModal.modalBackdrop);
-                }
-            } else {
-                this.currentModal = null;
-                this.activeModal = null;
-            }
-        });
-    }
-
-    public void closeModal() {
-        if (this.currentModal == null || this.currentModal.isClosing) {
-            return;
-        }
-        unfocusActiveTextFields();
-        final ModalEntry closingModal = this.currentModal;
-        closingModal.isClosing = true;
-
-        closingModal.alpha.animate(CLOSE_DURATION_MS, Easing.CUBIC, 0.0f).onComplete(() -> {
-            StackLayout root = this.uiAdapter != null && this.uiAdapter.rootComponent != null
-                    ? this.uiAdapter.rootComponent
-                    : this.rootStack;
-            if (root != null) {
-                root.removeChild(closingModal.modalBackdrop);
-                while (!this.modalEntryStack.isEmpty()) {
-                    ModalEntry under = this.modalEntryStack.pop();
-                    root.removeChild(under.modalBackdrop);
-                }
-            } else {
-                this.modalEntryStack.clear();
-            }
-            if (this.currentModal == closingModal) {
-                this.currentModal = null;
-                this.activeModal = null;
-            }
-        });
-    }
-
-    public void pushModal(FlowLayout modalBackdrop, FlowLayout dialog) {
-        unfocusActiveTextFields();
-        if (this.currentModal != null) {
-            this.modalEntryStack.push(this.currentModal);
-        }
-        int z = 500 + this.modalEntryStack.size() * 50;
-        modalBackdrop.zIndex(z);
-
-        AnimatableProperty<Float> modalAlpha = AnimatableProperty.of(0.0f);
-        modalAlpha.animate(OPEN_DURATION_MS, Easing.CUBIC, 1.0f);
-
-        modalBackdrop.surface((context, component) -> {
-            float a = Math.max(0.0f, Math.min(1.0f, modalAlpha.get()));
-            float currentAlpha = RenderSystem.getShaderColor()[3];
-            int alpha = Math.round(MODAL_SCRIM_ALPHA * a * currentAlpha);
-            if (alpha > 0) {
-                RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
-                context.fill(component.x(), component.y(), component.x() + component.width(), component.y() + component.height(), alpha << 24);
-            }
-        });
-
-        AnimatedDialogWrapper wrapper = null;
-        if (dialog != null) {
-            if (modalBackdrop.children().contains(dialog)) {
-                modalBackdrop.removeChild(dialog);
-            }
-            final ModalEntry[] entryRef = new ModalEntry[1];
-            wrapper = new AnimatedDialogWrapper(modalAlpha, () -> entryRef[0] != null && entryRef[0].isClosing);
-            wrapper.zIndex(z + 1);
-            wrapper.child(dialog);
-            modalBackdrop.child(wrapper);
-            final ModalEntry entry = new ModalEntry(modalBackdrop, dialog, modalAlpha, wrapper);
-            entryRef[0] = entry;
-            this.currentModal = entry;
-        } else {
-            this.currentModal = new ModalEntry(modalBackdrop, null, modalAlpha, null);
-        }
-
-        final ModalEntry current = this.currentModal;
-        this.activeModal = modalBackdrop;
-
-        modalBackdrop.mouseDown().subscribe((mouseX, mouseY, button) -> {
-            if (current.isClosing) {
-                return true;
-            }
-            if (dialog != null && !dialog.isInBoundingBox(mouseX, mouseY)) {
-                popModal();
-                return true;
-            }
-            return true;
-        });
-        modalBackdrop.mouseUp().subscribe((mouseX, mouseY, button) -> true);
-        modalBackdrop.mouseScroll().subscribe((mouseX, mouseY, amount) -> true);
-
-        StackLayout root = this.uiAdapter != null && this.uiAdapter.rootComponent != null
-                ? this.uiAdapter.rootComponent
-                : this.rootStack;
-        if (root != null && !root.children().contains(modalBackdrop)) {
-            root.child(modalBackdrop);
-        }
-    }
-
-    public static class AnimatedDialogWrapper extends FlowLayout {
-        private final AnimatableProperty<Float> alpha;
-        private final java.util.function.BooleanSupplier isClosingSupplier;
-
-        public AnimatedDialogWrapper(AnimatableProperty<Float> alpha, java.util.function.BooleanSupplier isClosingSupplier) {
-            super(Sizing.content(), Sizing.content(), Algorithm.VERTICAL);
-            this.alpha = alpha;
-            this.isClosingSupplier = isClosingSupplier;
-            this.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
-        }
-
-        @Override
-        public boolean canFocus(FocusSource source) {
-            return false;
-        }
-
-        @Override
-        public io.wispforest.owo.ui.util.FocusHandler focusHandler() {
-            var handler = super.focusHandler();
-            if (handler != null) return handler;
-            ParentComponent p = this.parent();
-            if (p != null && p.focusHandler() != null) {
-                return p.focusHandler();
-            }
-            var root = this.root();
-            if (root != null && root != this && root.focusHandler() != null) {
-                return root.focusHandler();
-            }
-            var mc = Minecraft.getInstance();
-            if (mc.screen instanceof ShopScreen screen && screen.getFocusHandler() != null) {
-                return screen.getFocusHandler();
-            }
-            if (this.focusHandler == null) {
-                this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-            }
-            return this.focusHandler;
-        }
-
-        @Override
-        public boolean onMouseDown(double mouseX, double mouseY, int button) {
-            if (this.isClosingSupplier != null && this.isClosingSupplier.getAsBoolean()) {
-                return true;
-            }
-            return super.onMouseDown(mouseX, mouseY, button);
-        }
-
-        @Override
-        public boolean onMouseUp(double mouseX, double mouseY, int button) {
-            if (this.isClosingSupplier != null && this.isClosingSupplier.getAsBoolean()) {
-                return true;
-            }
-            return super.onMouseUp(mouseX, mouseY, button);
-        }
-
-        @Override
-        public boolean onMouseScroll(double mouseX, double mouseY, double amount) {
-            if (this.isClosingSupplier != null && this.isClosingSupplier.getAsBoolean()) {
-                return true;
-            }
-            return super.onMouseScroll(mouseX, mouseY, amount);
-        }
-
-        @Override
-        public boolean onKeyPress(int keyCode, int scanCode, int modifiers) {
-            if (this.isClosingSupplier != null && this.isClosingSupplier.getAsBoolean()) {
-                return true;
-            }
-            return super.onKeyPress(keyCode, scanCode, modifiers);
-        }
-
-        @Override
-        public boolean onCharTyped(char chr, int modifiers) {
-            if (this.isClosingSupplier != null && this.isClosingSupplier.getAsBoolean()) {
-                return true;
-            }
-            return super.onCharTyped(chr, modifiers);
-        }
-
-        @Override
-        public void draw(OwoUIDrawContext context, int mouseX, int mouseY, float partialTicks, float delta) {
-            float a = Math.max(0.0f, Math.min(1.0f, this.alpha.get()));
-            if (a < 0.001f) {
-                return;
-            }
-            if (this.focusHandler() == null) {
-                this.focusHandler = new io.wispforest.owo.ui.util.FocusHandler(this);
-            }
-            float[] prevShaderColor = RenderSystem.getShaderColor().clone();
-            float effectiveAlpha = a * prevShaderColor[3];
-            RenderSystem.enableBlend();
-            RenderSystem.defaultBlendFunc();
-            RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, effectiveAlpha);
-            context.setColor(1.0f, 1.0f, 1.0f, effectiveAlpha);
-            super.draw(context, mouseX, mouseY, partialTicks, delta);
-            context.setColor(prevShaderColor[0], prevShaderColor[1], prevShaderColor[2], prevShaderColor[3]);
-            RenderSystem.setShaderColor(prevShaderColor[0], prevShaderColor[1], prevShaderColor[2], prevShaderColor[3]);
-        }
-    }
-
-    private void shakeDialog(FlowLayout dialog) {
-        if (dialog == null) return;
-        Insets rest = dialog.margins().get();
-        dialog.margins(rest.withLeft(rest.left() - 4));
-        dialog.margins().animate(50, Easing.CUBIC, rest.withLeft(rest.left() + 4)).forwards();
-        dialog.margins().animate(100, Easing.CUBIC, rest).forwards();
-    }
-
-    private void mountModal(FlowLayout modalBackdrop, FlowLayout dialog) {
-        unfocusActiveTextFields();
-        StackLayout root = this.uiAdapter != null && this.uiAdapter.rootComponent != null
-                ? this.uiAdapter.rootComponent
-                : this.rootStack;
-        if (this.currentModal != null) {
-            if (root != null) {
-                root.removeChild(this.currentModal.modalBackdrop);
-            }
-            this.currentModal = null;
-            this.activeModal = null;
-        }
-        while (!this.modalEntryStack.isEmpty()) {
-            ModalEntry under = this.modalEntryStack.pop();
-            if (root != null) {
-                root.removeChild(under.modalBackdrop);
-            }
-        }
-        pushModal(modalBackdrop, dialog);
-    }
 
     private void openIconPickerModal(java.util.function.Consumer<LotIcon> onSelect) {
         FlowLayout overlay = IconPickerModal.createOverlay(
@@ -2404,48 +1741,8 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
     }
 
     @Override
-    public boolean charTyped(char codePoint, int modifiers) {
-        if (this.isClosing || (this.currentModal != null && this.currentModal.isClosing)) {
-            return true;
-        }
-        if (this.uiAdapter != null && this.uiAdapter.charTyped(codePoint, modifiers)) {
-            return true;
-        }
-        if (isAnyTextBoxFocused()) {
-            return true;
-        }
-        return super.charTyped(codePoint, modifiers);
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (this.isClosing || (this.currentModal != null && this.currentModal.isClosing)) {
-            return true;
-        }
-
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE && isModalOpen()) {
-            popModal();
-            return true;
-        }
-
-        if (this.uiAdapter != null && this.uiAdapter.keyPressed(keyCode, scanCode, modifiers)) {
-            return true;
-        }
-
-        if (isAnyTextBoxFocused()) {
-            if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-                this.onClose();
-                return true;
-            }
-            return true;
-        }
-
-        if (ModKeyBindings.OPEN_SHOP.matches(keyCode, scanCode) || ModKeyBindings.OPEN_ADMIN_SHOP.matches(keyCode, scanCode)) {
-            this.onClose();
-            return true;
-        }
-
-        return super.keyPressed(keyCode, scanCode, modifiers);
+    protected boolean isCloseKeybind(int keyCode, int scanCode, int modifiers) {
+        return ModKeyBindings.OPEN_SHOP.matches(keyCode, scanCode) || ModKeyBindings.OPEN_ADMIN_SHOP.matches(keyCode, scanCode);
     }
 
     private int countPlayerItems(ShopEntry entry) {
@@ -2496,23 +1793,5 @@ public class ShopScreen extends BaseOwoScreen<StackLayout> {
     @Override
     public void removed() {
         super.removed();
-        if (this.minecraft != null && this.minecraft.gameRenderer != null) {
-            this.minecraft.gameRenderer.shutdownEffect();
-        }
-    }
-
-    @Override
-    public void onClose() {
-        if (this.isClosing) {
-            return;
-        }
-        unfocusActiveTextFields();
-        this.isClosing = true;
-        this.windowAlpha.animate(CLOSE_DURATION_MS, Easing.CUBIC, 0.0f).onComplete(() -> {
-            if (this.minecraft != null && this.minecraft.gameRenderer != null) {
-                this.minecraft.gameRenderer.shutdownEffect();
-            }
-            super.onClose();
-        });
     }
 }

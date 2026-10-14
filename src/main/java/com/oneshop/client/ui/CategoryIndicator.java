@@ -13,6 +13,7 @@ import io.wispforest.owo.ui.core.Sizing;
 public final class CategoryIndicator extends BaseComponent {
     public static final int HEIGHT = 2;
     private final AnimatableProperty<Float> alpha;
+    private int lastWidth = -1, lastX = Integer.MIN_VALUE, lastY = Integer.MIN_VALUE;
 
     public CategoryIndicator(AnimatableProperty<Float> alpha) {
         this.alpha = alpha;
@@ -35,13 +36,15 @@ public final class CategoryIndicator extends BaseComponent {
         int targetX = (parentW - stripWidth) / 2;
         int targetY = parentH - 1 - HEIGHT;
 
-        if (this.horizontalSizing().get().value != stripWidth) {
+        if (stripWidth != this.lastWidth) {
+            this.lastWidth = stripWidth;
             this.horizontalSizing(Sizing.fixed(stripWidth));
         }
 
-        Positioning targetPos = Positioning.absolute(targetX, targetY);
-        if (!targetPos.equals(this.positioning().get())) {
-            this.positioning(targetPos);
+        if (targetX != this.lastX || targetY != this.lastY) {
+            this.lastX = targetX;
+            this.lastY = targetY;
+            this.positioning(Positioning.absolute(targetX, targetY));
         }
     }
 

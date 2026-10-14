@@ -1,6 +1,8 @@
 ### Gradle ###
 .gradle
+.gradle/
 build/
+*.zip
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/**/build/
 

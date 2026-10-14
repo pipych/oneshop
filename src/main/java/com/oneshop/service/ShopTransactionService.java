@@ -361,13 +361,17 @@ public final class ShopTransactionService {
         return true;
     }
 
+    private static final java.util.Map<UUID, Integer> LAST_SYNCED_VERSION = new java.util.concurrent.ConcurrentHashMap<>();
+
     /**
      * Sends the complete shop registry to a specific player.
      */
     public static void syncShopData(ServerPlayer player) {
         if (player != null && player.server != null) {
+            int currentVer = ServerShopRegistry.getInstance().getSavedData(player.server).getDataVersion();
             var categories = ServerShopRegistry.getInstance().getCategories(player.server);
             PacketDistributor.sendToPlayer(player, new S2CSyncShopDataPayload(categories));
+            LAST_SYNCED_VERSION.put(player.getUUID(), currentVer);
         }
     }
 
@@ -376,8 +380,24 @@ public final class ShopTransactionService {
      */
     public static void broadcastShopData(MinecraftServer server) {
         if (server != null) {
+            int currentVer = ServerShopRegistry.getInstance().getSavedData(server).getDataVersion();
             var categories = ServerShopRegistry.getInstance().getCategories(server);
             PacketDistributor.sendToAllPlayers(new S2CSyncShopDataPayload(categories));
+            for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                LAST_SYNCED_VERSION.put(player.getUUID(), currentVer);
+            }
+        }
+    }
+
+    /**
+     * Sends shop data to player ONLY if their last synced version differs from the server's current version.
+     */
+    public static void syncShopDataIfChanged(ServerPlayer player) {
+        if (player != null && player.server != null) {
+            int currentVer = ServerShopRegistry.getInstance().getSavedData(player.server).getDataVersion();
+            if (LAST_SYNCED_VERSION.getOrDefault(player.getUUID(), -1) != currentVer) {
+                syncShopData(player);
+            }
         }
     }
 
@@ -495,18 +515,32 @@ public final class ShopTransactionService {
     public static boolean matchesTag(ItemStack stack, java.util.List<String> tags) {
         if (stack.isEmpty() || tags == null || tags.isEmpty()) return false;
         for (String tagStr : tags) {
-            String cleaned = tagStr.trim();
-            if (cleaned.startsWith("#")) cleaned = cleaned.substring(1);
-            if (cleaned.isEmpty()) continue;
-            try {
-                ResourceLocation loc = ResourceLocation.parse(cleaned);
-                TagKey<Item> tagKey = TagKey.create(Registries.ITEM, loc);
-                if (stack.is(tagKey)) {
-                    return true;
-                }
-            } catch (Exception ignored) {}
+            TagKey<Item> tagKey = ShopEntry.parseTagKey(tagStr);
+            if (tagKey != null && stack.is(tagKey)) {
+                return true;
+            }
         }
         return false;
+    }
+
+    public static boolean matchesAnyTag(ItemStack stack, java.util.List<TagKey<Item>> tagKeys) {
+        if (stack.isEmpty() || tagKeys == null || tagKeys.isEmpty()) return false;
+        for (TagKey<Item> tagKey : tagKeys) {
+            if (stack.is(tagKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static java.util.List<TagKey<Item>> resolveTagKeys(java.util.List<String> tags) {
+        if (tags == null || tags.isEmpty()) return java.util.List.of();
+        java.util.List<TagKey<Item>> keys = new java.util.ArrayList<>(tags.size());
+        for (String tagStr : tags) {
+            TagKey<Item> key = ShopEntry.parseTagKey(tagStr);
+            if (key != null) keys.add(key);
+        }
+        return keys;
     }
 
     /**
@@ -514,10 +548,12 @@ public final class ShopTransactionService {
      */
     public static int countTagMatchingItems(Player player, java.util.List<String> tags) {
         if (player == null || tags == null || tags.isEmpty()) return 0;
+        java.util.List<TagKey<Item>> tagKeys = resolveTagKeys(tags);
+        if (tagKeys.isEmpty()) return 0;
         int count = 0;
         for (int i = 0; i < 36; i++) {
             ItemStack slot = player.getInventory().getItem(i);
-            if (!slot.isEmpty() && matchesTag(slot, tags)) {
+            if (!slot.isEmpty() && matchesAnyTag(slot, tagKeys)) {
                 count += slot.getCount();
             }
         }
@@ -529,10 +565,12 @@ public final class ShopTransactionService {
      */
     public static int removeTagMatchingItems(Player player, java.util.List<String> tags, int amountToRemove) {
         if (player == null || amountToRemove <= 0 || tags == null || tags.isEmpty()) return 0;
+        java.util.List<TagKey<Item>> tagKeys = resolveTagKeys(tags);
+        if (tagKeys.isEmpty()) return 0;
         int remaining = amountToRemove;
         for (int i = 0; i < 36; i++) {
             ItemStack slot = player.getInventory().getItem(i);
-            if (!slot.isEmpty() && matchesTag(slot, tags)) {
+            if (!slot.isEmpty() && matchesAnyTag(slot, tagKeys)) {
                 int take = Math.min(remaining, slot.getCount());
                 slot.shrink(take);
                 remaining -= take;
