@@ -260,6 +260,7 @@ public class ShopScreen extends OneModUi {
         searchIcon.color(Color.ofRgb(BedrockTheme.TEXT_MUTED));
 
         this.searchBox = new BedrockTextBoxComponent(Sizing.fill(100), searchQuery);
+        this.searchBox.setMaxLength(128);
         this.searchBox.setHint(Component.translatable("oneshop.gui.search_hint"));
         this.searchBox.setBordered(false);
         this.searchBox.setCanLoseFocus(true);
@@ -720,6 +721,9 @@ public class ShopScreen extends OneModUi {
 
         FlowLayout modalBackdrop = createModalBackdrop();
         modalBackdrop.zIndex(500);
+        modalBackdrop.mouseDown().subscribe((mouseX, mouseY, button) -> true);
+        modalBackdrop.mouseUp().subscribe((mouseX, mouseY, button) -> true);
+        modalBackdrop.mouseScroll().subscribe((mouseX, mouseY, amount) -> true);
 
         FlowLayout dialog = Containers.verticalFlow(Sizing.fixed(260), Sizing.content());
         dialog.surface(BedrockTheme.PANEL);
@@ -783,12 +787,15 @@ public class ShopScreen extends OneModUi {
 
         // Fields: ID, Display Name, Sort Order
         BedrockTextBoxComponent idBox = new BedrockTextBoxComponent(Sizing.fill(100), existingCategory != null ? existingCategory.id() : "");
+        idBox.setMaxLength(64);
         dialog.child(createLabeledInput("oneshop.gui.category.id", idBox, "category_id"));
 
         BedrockTextBoxComponent nameBox = new BedrockTextBoxComponent(Sizing.fill(100), existingCategory != null ? existingCategory.displayName().getString() : "");
+        nameBox.setMaxLength(64);
         dialog.child(createLabeledInput("oneshop.gui.category.name", nameBox, "Display Name"));
 
         BedrockTextBoxComponent orderBox = new BedrockTextBoxComponent(Sizing.fill(100), existingCategory != null ? String.valueOf(existingCategory.sortOrder()) : "0");
+        orderBox.setMaxLength(16);
         dialog.child(createLabeledInput("oneshop.gui.category.order", orderBox, "0"));
 
         LabelComponent statusLabel = Components.label(Component.literal(""));
@@ -804,6 +811,9 @@ public class ShopScreen extends OneModUi {
             String catId = existingCategory != null ? existingCategory.id() : rawId;
             if (catId.isEmpty()) {
                 catId = java.util.UUID.randomUUID().toString();
+            } else if (existingCategory == null && ClientShopCache.getCategory(catId).isPresent()) {
+                statusLabel.text(Component.translatable("oneshop.gui.category.error.duplicate_id"));
+                return;
             }
             String catName = nameBox.getValue().trim();
             if (catName.isEmpty()) {
@@ -873,6 +883,9 @@ public class ShopScreen extends OneModUi {
 
         FlowLayout modalBackdrop = createModalBackdrop();
         modalBackdrop.zIndex(500);
+        modalBackdrop.mouseDown().subscribe((mouseX, mouseY, button) -> true);
+        modalBackdrop.mouseUp().subscribe((mouseX, mouseY, button) -> true);
+        modalBackdrop.mouseScroll().subscribe((mouseX, mouseY, amount) -> true);
 
         FlowLayout dialog = Containers.verticalFlow(Sizing.fixed(270), Sizing.content());
         dialog.surface(BedrockTheme.PANEL);
@@ -991,18 +1004,23 @@ public class ShopScreen extends OneModUi {
 
         // Fields: Optional Custom Title, ID, Buy Price, Sell Price, Max Stock, Permission, Commands, Tags
         BedrockTextBoxComponent titleBox = new BedrockTextBoxComponent(Sizing.fill(100), initialTitle);
+        titleBox.setMaxLength(128);
 
         BedrockTextBoxComponent stockBox = new BedrockTextBoxComponent(Sizing.fill(100),
                 existingEntry != null ? String.valueOf(existingEntry.maxStock()) : "-1");
+        stockBox.setMaxLength(32);
 
         BedrockTextBoxComponent permBox = new BedrockTextBoxComponent(Sizing.fill(100),
                 existingEntry != null ? existingEntry.permission() : "");
+        permBox.setMaxLength(128);
 
         BedrockTextBoxComponent cmdBox = new BedrockTextBoxComponent(Sizing.fill(100),
                 existingEntry != null && !existingEntry.runCommandsOnBuy().isEmpty() ? String.join("; ", existingEntry.runCommandsOnBuy()) : "");
+        cmdBox.setMaxLength(1024);
 
         BedrockTextBoxComponent tagsBox = new BedrockTextBoxComponent(Sizing.fill(100),
                 existingEntry != null && existingEntry.hasTags() ? String.join(", ", existingEntry.tags()) : "");
+        tagsBox.setMaxLength(512);
 
         // Status / Error feedback
         LabelComponent statusLabel = Components.label(Component.literal(""));
@@ -1054,22 +1072,33 @@ public class ShopScreen extends OneModUi {
                 return;
             }
 
-            double buyPrice;
-            try {
-                buyPrice = Double.parseDouble(buyPriceBox.getValue().trim());
-                if (buyPrice < 0) throw new NumberFormatException();
-            } catch (NumberFormatException e) {
-                statusLabel.text(Component.translatable("oneshop.gui.lot.error.invalid_buy"));
+            boolean allowBuy = buyToggle.toggled();
+            boolean allowSell = sellToggle.toggled();
+            if (!allowBuy && !allowSell) {
+                statusLabel.text(Component.literal("Включите хотя бы один режим: Покупка или Продажа"));
                 return;
             }
 
-            double sellPrice;
-            try {
-                sellPrice = Double.parseDouble(sellPriceBox.getValue().trim());
-                if (sellPrice < 0) throw new NumberFormatException();
-            } catch (NumberFormatException e) {
-                statusLabel.text(Component.translatable("oneshop.gui.lot.error.invalid_sell"));
-                return;
+            double buyPrice = 0.0;
+            if (allowBuy) {
+                try {
+                    buyPrice = Double.parseDouble(buyPriceBox.getValue().trim().replace(',', '.'));
+                    if (buyPrice < 0) throw new NumberFormatException();
+                } catch (NumberFormatException e) {
+                    statusLabel.text(Component.translatable("oneshop.gui.lot.error.invalid_buy"));
+                    return;
+                }
+            }
+
+            double sellPrice = 0.0;
+            if (allowSell) {
+                try {
+                    sellPrice = Double.parseDouble(sellPriceBox.getValue().trim().replace(',', '.'));
+                    if (sellPrice < 0) throw new NumberFormatException();
+                } catch (NumberFormatException e) {
+                    statusLabel.text(Component.translatable("oneshop.gui.lot.error.invalid_sell"));
+                    return;
+                }
             }
 
             int maxStock;
@@ -1088,12 +1117,6 @@ public class ShopScreen extends OneModUi {
                 commands = List.of(cmdRaw.split(";\\s*"));
             }
 
-            boolean allowBuy = buyToggle.toggled();
-            boolean allowSell = sellToggle.toggled();
-            if (!allowBuy && !allowSell) {
-                statusLabel.text(Component.literal("Включите хотя бы один режим: Покупка или Продажа"));
-                return;
-            }
             String customTitle = titleBox.getValue().trim();
 
             LotIcon finalIcon = selectedIcon[0];
@@ -1266,11 +1289,10 @@ public class ShopScreen extends OneModUi {
 
         FlowLayout modalBackdrop = createModalBackdrop();
         modalBackdrop.zIndex(500);
-
-        // Intercept clicks on backdrop
         modalBackdrop.mouseDown().subscribe((mouseX, mouseY, button) -> true);
         modalBackdrop.mouseUp().subscribe((mouseX, mouseY, button) -> true);
         modalBackdrop.mouseScroll().subscribe((mouseX, mouseY, amount) -> true);
+
 
         FlowLayout dialog = Containers.verticalFlow(Sizing.fixed(240), Sizing.content());
         dialog.surface(BedrockTheme.PANEL);
@@ -1404,11 +1426,10 @@ public class ShopScreen extends OneModUi {
             if (!digits.isEmpty()) {
                 try {
                     long parsed = Long.parseLong(digits);
-                    int clamped = (int) Math.max(1, Math.min(parsed, maxAllowed > 0 ? maxAllowed : 1));
-                    quantity[0] = clamped;
+                    quantity[0] = (int) Math.max(0, Math.min(parsed, 9999));
                 } catch (NumberFormatException ignored) {}
             } else {
-                quantity[0] = 1;
+                quantity[0] = 0;
             }
             updateState.accept(false);
         });
@@ -1422,7 +1443,7 @@ public class ShopScreen extends OneModUi {
         stepperRow.child(minusBtn);
         stepperRow.child(inputFrame);
         BedrockButton plusBtn = new BedrockButton(Component.literal("+"), Sizing.fixed(24), Sizing.fixed(18), () -> {
-            if (quantity[0] < maxAllowed) {
+            if (quantity[0] < 9999) {
                 quantity[0]++;
                 updateState.accept(true);
             }
@@ -1437,7 +1458,7 @@ public class ShopScreen extends OneModUi {
         int[] amounts = {1, 16, 32, 64};
         for (int amt : amounts) {
             BedrockButton qBtn = new BedrockButton(Component.literal(String.valueOf(amt)), Sizing.expand(20), Sizing.fixed(18), () -> {
-                quantity[0] = Math.min(amt, maxAllowed > 0 ? maxAllowed : amt);
+                quantity[0] = amt;
                 updateState.accept(true);
             });
             quickRow.child(qBtn);
@@ -1456,8 +1477,6 @@ public class ShopScreen extends OneModUi {
         dialog.child(totalLabel);
         dialog.child(statusLabel);
 
-        updateState.accept(true);
-
         // Action buttons: [Confirm] [Cancel]
         FlowLayout actionRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.fixed(20));
         actionRow.gap(4);
@@ -1470,6 +1489,8 @@ public class ShopScreen extends OneModUi {
         dialog.child(actionRow);
         modalBackdrop.child(dialog);
         mountModal(modalBackdrop, dialog);
+
+        updateState.accept(true);
     }
 
     // --- Quick Deposit Modal Dialog ---
@@ -1479,11 +1500,10 @@ public class ShopScreen extends OneModUi {
 
         FlowLayout modalBackdrop = createModalBackdrop();
         modalBackdrop.zIndex(500);
-
-        // Intercept clicks on backdrop
         modalBackdrop.mouseDown().subscribe((mouseX, mouseY, button) -> true);
         modalBackdrop.mouseUp().subscribe((mouseX, mouseY, button) -> true);
         modalBackdrop.mouseScroll().subscribe((mouseX, mouseY, amount) -> true);
+
 
         FlowLayout dialog = Containers.verticalFlow(Sizing.fixed(220), Sizing.content());
         dialog.surface(BedrockTheme.PANEL);
@@ -1506,11 +1526,14 @@ public class ShopScreen extends OneModUi {
         BedrockTextBoxComponent amtBox = new BedrockTextBoxComponent(Sizing.fill(100), String.valueOf(amount[0]));
         HoverableFlowLayout inputFrame = createNumericInputFrame(amtBox, null, 70);
 
+        final boolean[] sent = {false};
         BedrockButton confirmBtn = new BedrockButton(Component.translatable("oneshop.gui.deposit.confirm"), Sizing.expand(50), Sizing.fixed(20), () -> {
-            if (amount[0] > 0) {
+            if (sent[0]) return;
+            if (amount[0] > 0 && amount[0] <= availableCoins) {
+                sent[0] = true;
                 PacketDistributor.sendToServer(new C2SDepositCashPayload(amount[0]));
+                closeModal();
             }
-            closeModal();
         });
 
         boolean[] updatingFromButtons = {false};
@@ -1579,8 +1602,6 @@ public class ShopScreen extends OneModUi {
         quickRow.child(allBtn);
         dialog.child(quickRow);
 
-        updateState.accept(true);
-
         // Actions
         FlowLayout actionRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.fixed(20));
         actionRow.gap(4);
@@ -1593,6 +1614,8 @@ public class ShopScreen extends OneModUi {
         dialog.child(actionRow);
         modalBackdrop.child(dialog);
         mountModal(modalBackdrop, dialog);
+
+        updateState.accept(true);
     }
 
     // --- Quick Withdraw Modal Dialog ---
@@ -1604,11 +1627,10 @@ public class ShopScreen extends OneModUi {
 
         FlowLayout modalBackdrop = createModalBackdrop();
         modalBackdrop.zIndex(500);
-
-        // Intercept clicks on backdrop
         modalBackdrop.mouseDown().subscribe((mouseX, mouseY, button) -> true);
         modalBackdrop.mouseUp().subscribe((mouseX, mouseY, button) -> true);
         modalBackdrop.mouseScroll().subscribe((mouseX, mouseY, amount) -> true);
+
 
         FlowLayout dialog = Containers.verticalFlow(Sizing.fixed(220), Sizing.content());
         dialog.surface(BedrockTheme.PANEL);
@@ -1632,11 +1654,14 @@ public class ShopScreen extends OneModUi {
         BedrockTextBoxComponent amtBox = new BedrockTextBoxComponent(Sizing.fill(100), String.valueOf(amount[0]));
         HoverableFlowLayout inputFrame = createNumericInputFrame(amtBox, null, 70);
 
+        final boolean[] sent = {false};
         BedrockButton confirmBtn = new BedrockButton(Component.translatable("oneshop.gui.withdraw.confirm"), Sizing.expand(50), Sizing.fixed(20), () -> {
+            if (sent[0]) return;
             if (amount[0] > 0 && amount[0] <= maxWithdrawable) {
+                sent[0] = true;
                 PacketDistributor.sendToServer(new C2SWithdrawCashPayload(amount[0]));
+                closeModal();
             }
-            closeModal();
         });
 
         boolean[] updatingFromButtons = {false};
@@ -1705,8 +1730,6 @@ public class ShopScreen extends OneModUi {
         quickRow.child(allBtn);
         dialog.child(quickRow);
 
-        updateState.accept(true);
-
         // Actions
         FlowLayout actionRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.fixed(20));
         actionRow.gap(4);
@@ -1719,6 +1742,8 @@ public class ShopScreen extends OneModUi {
         dialog.child(actionRow);
         modalBackdrop.child(dialog);
         mountModal(modalBackdrop, dialog);
+
+        updateState.accept(true);
     }
 
     private void openTransferModal() {

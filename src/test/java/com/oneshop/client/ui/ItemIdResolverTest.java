@@ -85,4 +85,16 @@ public class ItemIdResolverTest {
         hpField.setAccessible(true);
         assertNotNull(hpField.get(null), "highlightPos field should be found via reflection");
     }
+
+    @Test
+    public void testFixedGuiScaleConstantsAndInheritance() throws Exception {
+        assertEquals(2, OneModUi.FIXED_GUI_SCALE);
+        assertTrue(OneModUi.class.isAssignableFrom(ShopScreen.class));
+        assertTrue(OneModUi.class.isAssignableFrom(IconPickerModal.class));
+
+        // Ensure init, resize and removed are declared in OneModUi
+        assertNotNull(OneModUi.class.getDeclaredMethod("init"));
+        assertNotNull(OneModUi.class.getDeclaredMethod("resize", net.minecraft.client.Minecraft.class, int.class, int.class));
+        assertNotNull(OneModUi.class.getDeclaredMethod("removed"));
+    }
 }

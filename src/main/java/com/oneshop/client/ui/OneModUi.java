@@ -38,6 +38,7 @@ import java.util.function.BooleanSupplier;
  * and standard Bedrock dialog layouts.
  */
 public abstract class OneModUi extends BaseOwoScreen<StackLayout> {
+    public static final int FIXED_GUI_SCALE = 2;
     public static final int MODAL_SCRIM_ALPHA = 0x90;
     public static final int OPEN_DURATION_MS = 210;
     public static final int CLOSE_DURATION_MS = 170;
@@ -60,6 +61,7 @@ public abstract class OneModUi extends BaseOwoScreen<StackLayout> {
     protected StackLayout rootStack;
     protected final AnimatableProperty<Float> windowAlpha = AnimatableProperty.of(0.0f);
     protected boolean isClosing = false;
+    protected boolean restoringGuiScale = false;
     protected ModalEntry currentModal = null;
     protected final Deque<ModalEntry> modalEntryStack = new ArrayDeque<>();
 
@@ -83,6 +85,48 @@ public abstract class OneModUi extends BaseOwoScreen<StackLayout> {
     @Override
     protected @NotNull OwoUIAdapter<StackLayout> createAdapter() {
         return OwoUIAdapter.create(this, Containers::stack);
+    }
+
+    @Override
+    protected void init() {
+        if (this.minecraft != null) {
+            var window = this.minecraft.getWindow();
+            int targetScale = window.calculateScale(FIXED_GUI_SCALE, this.minecraft.isEnforceUnicode());
+            if (targetScale < 1) targetScale = 1;
+            if (window.getGuiScale() != targetScale) {
+                window.setGuiScale(targetScale);
+            }
+            this.width = window.getGuiScaledWidth();
+            this.height = window.getGuiScaledHeight();
+        }
+        super.init();
+    }
+
+    @Override
+    public void resize(Minecraft minecraft, int width, int height) {
+        if (this.restoringGuiScale) {
+            return;
+        }
+        var window = minecraft.getWindow();
+        int targetScale = window.calculateScale(FIXED_GUI_SCALE, minecraft.isEnforceUnicode());
+        if (targetScale < 1) targetScale = 1;
+        if (window.getGuiScale() != targetScale) {
+            window.setGuiScale(targetScale);
+        }
+        super.resize(minecraft, window.getGuiScaledWidth(), window.getGuiScaledHeight());
+    }
+
+    @Override
+    public void removed() {
+        super.removed();
+        if (this.minecraft != null) {
+            this.restoringGuiScale = true;
+            try {
+                this.minecraft.resizeDisplay();
+            } finally {
+                this.restoringGuiScale = false;
+            }
+        }
     }
 
     /**

@@ -54,7 +54,7 @@ public class BedrockTextBoxComponent extends TextBoxComponent {
 
     private Component customHint;
     private String customSuggestion;
-    private int customMaxLength = 32;
+    private int customMaxLength = 256;
     private int customTextColor = 14737632;
     private int customTextColorUneditable = 7368816;
     private boolean customIsEditable = true;
@@ -66,6 +66,7 @@ public class BedrockTextBoxComponent extends TextBoxComponent {
         super(horizontalSizing);
         this.setBordered(false);
         this.setCanLoseFocus(true);
+        this.setMaxLength(256);
     }
 
     public BedrockTextBoxComponent(Sizing horizontalSizing, String text) {
@@ -73,6 +74,28 @@ public class BedrockTextBoxComponent extends TextBoxComponent {
         if (text != null && !text.isEmpty()) {
             this.setValue(text);
             this.moveCursorToStart(false);
+            ensureDisplayPosValid();
+        }
+    }
+
+    @Override
+    public void setValue(String text) {
+        super.setValue(text);
+        ensureDisplayPosValid();
+    }
+
+    public void ensureDisplayPosValid() {
+        String val = this.getValue();
+        int innerWidth = this.getInnerWidth();
+        var font = Minecraft.getInstance().font;
+        if (innerWidth <= 0 || font == null || font.width(val) <= innerWidth) {
+            if (DISPLAY_POS_FIELD != null) {
+                try {
+                    if (DISPLAY_POS_FIELD.getInt(this) != 0) {
+                        DISPLAY_POS_FIELD.setInt(this, 0);
+                    }
+                } catch (Throwable ignored) {}
+            }
         }
     }
 
@@ -127,9 +150,23 @@ public class BedrockTextBoxComponent extends TextBoxComponent {
     }
 
     protected int getDisplayPos() {
+        String val = this.getValue();
+        int innerWidth = this.getInnerWidth();
+        var font = Minecraft.getInstance().font;
+        if (innerWidth <= 0 || font == null || font.width(val) <= innerWidth) {
+            if (DISPLAY_POS_FIELD != null) {
+                try {
+                    if (DISPLAY_POS_FIELD.getInt(this) != 0) {
+                        DISPLAY_POS_FIELD.setInt(this, 0);
+                    }
+                } catch (Throwable ignored) {}
+            }
+            return 0;
+        }
         if (DISPLAY_POS_FIELD != null) {
             try {
-                return DISPLAY_POS_FIELD.getInt(this);
+                int dp = DISPLAY_POS_FIELD.getInt(this);
+                return Mth.clamp(dp, 0, val.length());
             } catch (Throwable ignored) {}
         }
         return 0;
@@ -173,7 +210,8 @@ public class BedrockTextBoxComponent extends TextBoxComponent {
         int cursorPos = this.getCursorPosition();
         int relCursorPos = cursorPos - displayPos;
         String val = this.getValue();
-        String visibleText = font.plainSubstrByWidth(val.substring(displayPos), this.getInnerWidth());
+        int safeDisplayPos = Mth.clamp(displayPos, 0, val.length());
+        String visibleText = font.plainSubstrByWidth(val.substring(safeDisplayPos), this.getInnerWidth());
         boolean cursorWithinVisible = relCursorPos >= 0 && relCursorPos <= visibleText.length();
         boolean blinkOn = this.isFocused() && (Util.getMillis() - this.getFocusedTime()) / 300L % 2L == 0L && cursorWithinVisible;
 
@@ -182,11 +220,11 @@ public class BedrockTextBoxComponent extends TextBoxComponent {
 
         int renderX = textX;
         int highlightPos = this.getHighlightPos();
-        int relHighlightPos = Mth.clamp(highlightPos - displayPos, 0, visibleText.length());
+        int relHighlightPos = Mth.clamp(highlightPos - safeDisplayPos, 0, visibleText.length());
 
         if (!visibleText.isEmpty()) {
             String beforeCursor = cursorWithinVisible ? visibleText.substring(0, relCursorPos) : visibleText;
-            renderX = guiGraphics.drawString(font, this.customFormatter.apply(beforeCursor, displayPos), textX, textY, color, this.getTextShadow());
+            renderX = guiGraphics.drawString(font, this.customFormatter.apply(beforeCursor, safeDisplayPos), textX, textY, color, this.getTextShadow());
         }
 
         boolean cursorNotAtEnd = cursorPos < val.length() || val.length() >= this.customMaxLength;
@@ -203,7 +241,7 @@ public class BedrockTextBoxComponent extends TextBoxComponent {
         }
 
         if (this.customHint != null && visibleText.isEmpty() && !this.isFocused()) {
-            guiGraphics.drawString(font, this.customHint, renderX, textY, color, this.getTextShadow());
+            guiGraphics.drawString(font, this.customHint, renderX, textY, BedrockTheme.TEXT_MUTED, this.getTextShadow());
         }
 
         if (!cursorNotAtEnd && this.customSuggestion != null) {

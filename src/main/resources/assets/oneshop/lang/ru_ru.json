@@ -51,6 +51,7 @@
   "oneshop.gui.category.grab_hand": "Взять из руки",
   "oneshop.gui.category.error.empty_id": "ID не может быть пустым!",
   "oneshop.gui.category.error.empty_name": "Название не может быть пустым!",
+  "oneshop.gui.category.error.duplicate_id": "Категория с таким ID уже существует!",
   "oneshop.gui.default_category.blocks": "Блоки",
 
   "oneshop.gui.no_items": "В этой категории нет товаров.",

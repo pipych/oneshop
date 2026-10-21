@@ -51,6 +51,7 @@
   "oneshop.gui.category.grab_hand": "Grab Hand",
   "oneshop.gui.category.error.empty_id": "ID cannot be empty!",
   "oneshop.gui.category.error.empty_name": "Name cannot be empty!",
+  "oneshop.gui.category.error.duplicate_id": "A category with this ID already exists!",
   "oneshop.gui.default_category.blocks": "Blocks",
 
   "oneshop.gui.no_items": "No items in this category.",

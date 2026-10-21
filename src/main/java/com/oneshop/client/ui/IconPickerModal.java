@@ -49,7 +49,7 @@ import java.util.function.Consumer;
  * In-game Icon Picker modal offering "Items" and "Icons" (textures) tabs
  * with dynamic case-insensitive search, pagination, full tooltips, and Bedrock UI styling.
  */
-public class IconPickerModal extends BaseOwoScreen<StackLayout> {
+public class IconPickerModal extends OneModUi {
     public enum Tab {
         ITEMS,
         TEXTURES
@@ -70,14 +70,13 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
     private final Screen parentScreen;
     private final Consumer<LotIcon> onSelect;
     private final Runnable onCancel;
-    private final AnimatableProperty<Float> windowAlpha = AnimatableProperty.of(0.0f);
-    private boolean isClosing = false;
 
     public IconPickerModal(Screen parentScreen, Consumer<LotIcon> onSelect) {
         this(parentScreen, onSelect, null);
     }
 
     public IconPickerModal(Screen parentScreen, Consumer<LotIcon> onSelect, Runnable onCancel) {
+        super();
         this.parentScreen = parentScreen;
         this.onSelect = onSelect;
         this.onCancel = onCancel;
@@ -149,142 +148,44 @@ public class IconPickerModal extends BaseOwoScreen<StackLayout> {
     }
 
     @Override
-    protected @NotNull OwoUIAdapter<StackLayout> createAdapter() {
-        return OwoUIAdapter.create(this, Containers::stack);
-    }
-
-    @Override
     protected void build(StackLayout root) {
         this.isClosing = false;
         this.windowAlpha.set(0.0f);
-        this.windowAlpha.animate(210, Easing.CUBIC, 1.0f);
+        this.windowAlpha.animate(OPEN_DURATION_MS, Easing.CUBIC, 1.0f);
 
         FlowLayout overlay = createOverlay(
                 picked -> {
                     if (onSelect != null) onSelect.accept(picked);
-                    closePicker();
+                    onClose();
                 },
-                this::closePicker
+                this::onClose
         );
         root.child(overlay);
     }
 
     @Override
-    public void render(GuiGraphics context, int mouseX, int mouseY, float delta) {
-        float alpha = Math.max(0.0f, Math.min(1.0f, this.windowAlpha.get()));
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, alpha);
-        context.setColor(1.0f, 1.0f, 1.0f, alpha);
-        super.render(context, mouseX, mouseY, delta);
-        context.flush();
-        context.setColor(1.0f, 1.0f, 1.0f, 1.0f);
-        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
-    }
-
-    public io.wispforest.owo.ui.util.FocusHandler getFocusHandler() {
-        if (this.uiAdapter == null || this.uiAdapter.rootComponent == null) {
-            return null;
-        }
-        return this.uiAdapter.rootComponent.focusHandler();
-    }
-
-    private void unfocusActiveFields() {
-        if (this.uiAdapter == null) return;
-        try {
-            var focusHandler = getFocusHandler();
-            if (focusHandler != null) {
-                var focused = focusHandler.focused();
-                if (focused instanceof FocusableWidgetComponent f) {
-                    f.onFocusLost();
-                    if (f.getInnerWidget() != null) {
-                        f.getInnerWidget().setFocused(false);
-                    }
-                } else if (focused instanceof net.minecraft.client.gui.components.EditBox e) {
-                    e.setFocused(false);
-                }
-                focusHandler.focus(null, io.wispforest.owo.ui.core.Component.FocusSource.MOUSE_CLICK);
-            }
-        } catch (Throwable ignored) {}
-        if (this.uiAdapter.rootComponent != null) {
-            try {
-                var descendants = new java.util.ArrayList<io.wispforest.owo.ui.core.Component>();
-                this.uiAdapter.rootComponent.collectDescendants(descendants);
-                for (var c : descendants) {
-                    if (c instanceof FocusableWidgetComponent f) {
-                        f.onFocusLost();
-                        if (f.getInnerWidget() != null) {
-                            f.getInnerWidget().setFocused(false);
-                        }
-                    } else if (c instanceof net.minecraft.client.gui.components.EditBox e) {
-                        e.setFocused(false);
-                    }
-                }
-            } catch (Throwable ignored) {}
-        }
-    }
-
-    private void closePicker() {
+    public void onClose() {
         if (this.isClosing) {
             return;
         }
-        unfocusActiveFields();
+        unfocusActiveTextFields();
         this.isClosing = true;
-        this.windowAlpha.animate(170, Easing.CUBIC, 0.0f).onComplete(() -> {
+        this.windowAlpha.animate(CLOSE_DURATION_MS, Easing.CUBIC, 0.0f).onComplete(() -> {
             if (this.onCancel != null) {
                 this.onCancel.run();
             } else if (this.minecraft != null) {
                 this.minecraft.setScreen(parentScreen);
+            } else {
+                super.onClose();
             }
         });
-    }
-
-    @Override
-    public void onClose() {
-        closePicker();
-    }
-
-    @Override
-    public void mouseMoved(double mouseX, double mouseY) {
-        if (this.isClosing) return;
-        super.mouseMoved(mouseX, mouseY);
-    }
-
-    @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (this.isClosing) return true;
-        return super.mouseClicked(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (this.isClosing) return true;
-        return super.mouseReleased(mouseX, mouseY, button);
-    }
-
-    @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
-        if (this.isClosing) return true;
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
-
-    @Override
-    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        if (this.isClosing) return true;
-        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
-    }
-
-    @Override
-    public boolean charTyped(char codePoint, int modifiers) {
-        if (this.isClosing) return true;
-        return super.charTyped(codePoint, modifiers);
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (this.isClosing) return true;
         if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
-            closePicker();
+            onClose();
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
