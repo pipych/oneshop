@@ -1,6 +1,5 @@
 package com.oneshop.client.ui;
 
-import com.oneshop.item.SprotaItem;
 import com.oneshop.network.C2STransferMoneyPayload;
 import com.oneshop.client.ClientBankCache;
 import io.wispforest.owo.ui.component.Components;
@@ -20,6 +19,7 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.PlayerInfo;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.Collection;
@@ -34,6 +34,9 @@ import java.util.UUID;
  * Stage 2: Transfer amount input with stepper, presets (+10, +50, +100, "Все"), and confirmation.
  */
 public final class TransferModal {
+    private static final ResourceLocation CURRENCY_ICON_TEXTURE =
+            ResourceLocation.fromNamespaceAndPath("oneshop", "textures/gui/currency_icon.png");
+
     private TransferModal() {}
 
     public static FlowLayout createOverlay(ShopScreen screen, Runnable onClose) {
@@ -212,9 +215,14 @@ public final class TransferModal {
         stageContent.child(recipientRow);
 
         // Your balance info
-        LabelComponent balanceLabel = Components.label(Component.translatable("oneshop.gui.transfer.your_balance", screen.formatBalanceAmount() + " " + SprotaItem.CURRENCY_SYMBOL));
+        FlowLayout balanceRow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+        balanceRow.verticalAlignment(VerticalAlignment.CENTER);
+        balanceRow.gap(3);
+        LabelComponent balanceLabel = Components.label(Component.translatable("oneshop.gui.transfer.your_balance", screen.formatBalanceAmount()));
         balanceLabel.color(Color.ofRgb(BedrockTheme.TEXT_MUTED));
-        stageContent.child(balanceLabel);
+        balanceRow.child(balanceLabel);
+        balanceRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
+        stageContent.child(balanceRow);
 
         // Transfer Amount Label
         LabelComponent amtPrompt = Components.label(Component.translatable("oneshop.gui.transfer.amount"));
@@ -231,7 +239,11 @@ public final class TransferModal {
         BedrockTextBoxComponent amtBox = new BedrockTextBoxComponent(Sizing.fill(100), amount[0] == (long) amount[0] ? String.valueOf((long) amount[0]) : String.format(Locale.ROOT, "%.2f", amount[0]));
         HoverableFlowLayout inputFrame = screen.createNumericInputFrame(amtBox, null, 80);
 
+        FlowLayout statusRow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+        statusRow.verticalAlignment(VerticalAlignment.CENTER);
+        statusRow.gap(3);
         LabelComponent statusLabel = Components.label(Component.literal(""));
+        TextureDisplayComponent statusIcon = new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8);
 
         BedrockButton confirmBtn = new BedrockButton(Component.translatable("oneshop.gui.button.confirm"), Sizing.expand(50), Sizing.fixed(20), () -> {
             if (amount[0] > 0 && amount[0] <= currentBalance) {
@@ -250,14 +262,19 @@ public final class TransferModal {
                 updatingFromButtons[0] = false;
             }
 
+            statusRow.clearChildren();
             if (amount[0] <= 0) {
                 statusLabel.text(Component.translatable("oneshop.gui.modal.status.invalid_amount").withStyle(ChatFormatting.RED));
+                statusRow.child(statusLabel);
                 confirmBtn.active(false);
             } else if (amount[0] > currentBalance) {
                 statusLabel.text(Component.translatable("oneshop.gui.modal.status.insufficient_funds").withStyle(ChatFormatting.RED));
+                statusRow.child(statusLabel);
                 confirmBtn.active(false);
             } else {
-                statusLabel.text(Component.translatable("oneshop.gui.transfer.ready", String.format(Locale.ROOT, "%.2f", amount[0]), SprotaItem.CURRENCY_SYMBOL).withStyle(ChatFormatting.GREEN));
+                statusLabel.text(Component.translatable("oneshop.gui.transfer.ready", String.format(Locale.ROOT, "%.2f", amount[0])).withStyle(ChatFormatting.GREEN));
+                statusRow.child(statusLabel);
+                statusRow.child(statusIcon);
                 confirmBtn.active(true);
             }
         };
@@ -323,8 +340,8 @@ public final class TransferModal {
         presetsRow.child(allBtn);
         stageContent.child(presetsRow);
 
-        // Status Label
-        stageContent.child(statusLabel);
+        // Status Row
+        stageContent.child(statusRow);
         updateState.accept(true);
 
         // Action buttons: [Confirm] [Cancel]

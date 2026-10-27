@@ -2,6 +2,7 @@ package com.oneshop.network;
 
 import com.oneshop.OneShop;
 import com.oneshop.client.network.ClientPayloadHandler;
+import com.oneshop.service.OneManagerBridge;
 import com.oneshop.service.PlayerAccountService;
 import com.oneshop.service.ShopTransactionService;
 import com.oneshop.shop.ServerShopRegistry;
@@ -42,6 +43,18 @@ public final class ModNetwork {
                 S2COpenShopScreenPayload.TYPE,
                 S2COpenShopScreenPayload.STREAM_CODEC,
                 ClientPayloadHandler::handleOpenShopScreen
+        );
+
+        registrar.playToClient(
+                S2CSyncKnyazOrdersPayload.TYPE,
+                S2CSyncKnyazOrdersPayload.STREAM_CODEC,
+                ClientPayloadHandler::handleSyncKnyazOrders
+        );
+
+        registrar.playToClient(
+                S2CSyncTabDataPayload.TYPE,
+                S2CSyncTabDataPayload.STREAM_CODEC,
+                ClientPayloadHandler::handleSyncTabData
         );
 
         // Serverbound payloads
@@ -85,6 +98,30 @@ public final class ModNetwork {
                 C2SAdminUpdateCategoryPayload.TYPE,
                 C2SAdminUpdateCategoryPayload.STREAM_CODEC,
                 ModNetwork::handleAdminUpdateCategoryOnServer
+        );
+
+        registrar.playToServer(
+                C2SKnyazManageOrderPayload.TYPE,
+                C2SKnyazManageOrderPayload.STREAM_CODEC,
+                ModNetwork::handleKnyazManageOrderOnServer
+        );
+
+        registrar.playToServer(
+                C2SFulfillKnyazOrderPayload.TYPE,
+                C2SFulfillKnyazOrderPayload.STREAM_CODEC,
+                ModNetwork::handleFulfillKnyazOrderOnServer
+        );
+
+        registrar.playToServer(
+                C2SClaimKnyazOrderItemsPayload.TYPE,
+                C2SClaimKnyazOrderItemsPayload.STREAM_CODEC,
+                ModNetwork::handleClaimKnyazOrderItemsOnServer
+        );
+
+        registrar.playToServer(
+                C2SRequestTabDataPayload.TYPE,
+                C2SRequestTabDataPayload.STREAM_CODEC,
+                ModNetwork::handleRequestTabDataOnServer
         );
     }
 
@@ -186,6 +223,52 @@ public final class ModNetwork {
                 }
                 savedData.setDirty();
                 ShopTransactionService.broadcastShopData(server);
+            }
+        });
+    }
+
+    private static void handleKnyazManageOrderOnServer(C2SKnyazManageOrderPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                ShopTransactionService.manageKnyazOrder(player, payload.order(), payload.delete());
+            }
+        });
+    }
+
+    private static void handleFulfillKnyazOrderOnServer(C2SFulfillKnyazOrderPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                ShopTransactionService.fulfillKnyazOrder(player, payload.orderId());
+            }
+        });
+    }
+
+    private static void handleClaimKnyazOrderItemsOnServer(C2SClaimKnyazOrderItemsPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                ShopTransactionService.claimKnyazOrderItems(player, payload.orderId());
+            }
+        });
+    }
+
+    public static void syncTabData(ServerPlayer player) {
+        if (player == null || player.server == null) return;
+        OneManagerBridge.PlayerTabMetrics metrics = OneManagerBridge.getPlayerTabMetrics(player.server, player.getUUID());
+        PacketDistributor.sendToPlayer(player, new S2CSyncTabDataPayload(
+                metrics.stateBrands(),
+                metrics.taxDebt(),
+                metrics.taxRate(),
+                metrics.characterNames(),
+                metrics.knyazUuid(),
+                metrics.knyazName()
+        ));
+    }
+
+    private static void handleRequestTabDataOnServer(C2SRequestTabDataPayload payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (context.player() instanceof ServerPlayer player) {
+                PlayerAccountService.syncBalance(player);
+                syncTabData(player);
             }
         });
     }

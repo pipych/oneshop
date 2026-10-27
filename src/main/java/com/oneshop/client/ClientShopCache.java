@@ -1,5 +1,6 @@
 package com.oneshop.client;
 
+import com.oneshop.shop.KnyazOrder;
 import com.oneshop.shop.ShopCategory;
 import com.oneshop.shop.ShopEntry;
 import net.minecraft.core.Holder;
@@ -27,6 +28,11 @@ public final class ClientShopCache {
     private record TagPriceEntry(TagKey<Item> tagKey, double price) {}
 
     private static List<ShopCategory> categories = List.of();
+    private static List<KnyazOrder> knyazOrders = List.of();
+    private static boolean clientIsKnyaz = false;
+    private static boolean clientHasCrown = false;
+    private static String knyazName = "";
+    private static long treasuryBalance = 0L;
     private static Map<Item, Double> itemSellPrices = Map.of();
     private static List<TagPriceEntry> tagSellPrices = List.of();
 
@@ -39,6 +45,41 @@ public final class ClientShopCache {
     public static void setCategories(List<ShopCategory> newCategories) {
         categories = newCategories != null ? List.copyOf(newCategories) : List.of();
         rebuildItemSellPrices();
+    }
+
+    public static List<KnyazOrder> getKnyazOrders() {
+        return knyazOrders;
+    }
+
+    public static void setKnyazOrders(List<KnyazOrder> newOrders) {
+        knyazOrders = newOrders != null ? List.copyOf(newOrders) : List.of();
+    }
+
+    public static Optional<KnyazOrder> getKnyazOrder(String orderId) {
+        return knyazOrders.stream().filter(o -> o.id().equals(orderId)).findFirst();
+    }
+
+    public static boolean isClientKnyaz() {
+        return clientIsKnyaz;
+    }
+
+    public static boolean clientHasCrown() {
+        return clientHasCrown;
+    }
+
+    public static String getKnyazName() {
+        return knyazName;
+    }
+
+    public static long getTreasuryBalance() {
+        return treasuryBalance;
+    }
+
+    public static void setKnyazState(boolean isKnyaz, boolean hasCrown, String currentKnyazName, long treasury) {
+        clientIsKnyaz = isKnyaz;
+        clientHasCrown = hasCrown;
+        knyazName = currentKnyazName != null ? currentKnyazName : "";
+        treasuryBalance = Math.max(0L, treasury);
     }
 
     public static Optional<ShopCategory> getCategory(String categoryId) {
@@ -140,6 +181,8 @@ public final class ClientShopCache {
      */
     public static void clear() {
         setCategories(List.of());
+        setKnyazOrders(List.of());
+        setKnyazState(false, false, "", 0L);
     }
 
     /**

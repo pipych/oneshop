@@ -236,4 +236,29 @@ public final class ServerShopRegistry {
     public void markDirty(MinecraftServer server) {
         getSavedData(server).setDirty();
     }
+
+    // Knyaz Orders Queries & Management
+    public List<KnyazOrder> getKnyazOrders() {
+        return getSavedData().getKnyazOrders();
+    }
+
+    public List<KnyazOrder> getKnyazOrders(MinecraftServer server) {
+        return getSavedData(server).getKnyazOrders();
+    }
+
+    public Optional<KnyazOrder> getKnyazOrder(String orderId) {
+        return getSavedData().getKnyazOrder(orderId);
+    }
+
+    public Optional<KnyazOrder> getKnyazOrder(MinecraftServer server, String orderId) {
+        return getSavedData(server).getKnyazOrder(orderId);
+    }
+
+    public void setKnyazOrder(MinecraftServer server, KnyazOrder order) {
+        getSavedData(server).setKnyazOrder(order);
+    }
+
+    public boolean removeKnyazOrder(MinecraftServer server, String orderId) {
+        return getSavedData(server).removeKnyazOrder(orderId);
+    }
 }

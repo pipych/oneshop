@@ -4,6 +4,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import com.oneshop.client.key.ClientKeyHandler;
 import com.oneshop.client.key.ModKeyBindings;
 import com.oneshop.client.ui.IconPickerModal;
+import com.oneshop.client.ui.TabOverlayHud;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
@@ -13,6 +14,7 @@ import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientTooltipComponentFactoriesEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
@@ -25,9 +27,12 @@ public final class ClientSetup {
         modEventBus.addListener(FMLClientSetupEvent.class, ClientSetup::onClientSetup);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Post.class, ClientKeyHandler::onClientTick);
         NeoForge.EVENT_BUS.addListener(ScreenEvent.Opening.class, ClientKeyHandler::onScreenOpening);
+        NeoForge.EVENT_BUS.addListener(RenderGuiLayerEvent.Pre.class, TabOverlayHud::onRenderGuiLayerPre);
         NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.LoggingOut.class, event -> {
             ClientShopCache.clear();
             ClientBankCache.setBalance(0.0);
+            ClientTabCache.clear();
+            TabOverlayHud.reset();
             InventoryHighlightHandler.resetState();
             IconPickerModal.clearCaches();
             com.oneshop.shop.ShopEntry.clearCaches();

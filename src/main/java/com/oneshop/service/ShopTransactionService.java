@@ -2,10 +2,14 @@ package com.oneshop.service;
 
 import com.oneshop.item.ModItems;
 import com.oneshop.item.SprotaItem;
+import com.oneshop.network.S2CSyncKnyazOrdersPayload;
 import com.oneshop.network.S2CSyncShopDataPayload;
+import com.oneshop.shop.KnyazOrder;
+import com.oneshop.shop.KnyazOrderItem;
 import com.oneshop.shop.ServerShopRegistry;
 import com.oneshop.shop.ShopCategory;
 import com.oneshop.shop.ShopEntry;
+import com.oneshop.shop.ShopSavedData;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -364,19 +368,20 @@ public final class ShopTransactionService {
     private static final java.util.Map<UUID, Integer> LAST_SYNCED_VERSION = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
-     * Sends the complete shop registry to a specific player.
+     * Sends the complete shop registry and Knyaz order state to a specific player.
      */
     public static void syncShopData(ServerPlayer player) {
         if (player != null && player.server != null) {
             int currentVer = ServerShopRegistry.getInstance().getSavedData(player.server).getDataVersion();
             var categories = ServerShopRegistry.getInstance().getCategories(player.server);
             PacketDistributor.sendToPlayer(player, new S2CSyncShopDataPayload(categories));
+            syncKnyazOrders(player);
             LAST_SYNCED_VERSION.put(player.getUUID(), currentVer);
         }
     }
 
     /**
-     * Broadcasts the complete shop registry to all connected players.
+     * Broadcasts the complete shop registry and Knyaz orders to all connected players.
      */
     public static void broadcastShopData(MinecraftServer server) {
         if (server != null) {
@@ -384,21 +389,193 @@ public final class ShopTransactionService {
             var categories = ServerShopRegistry.getInstance().getCategories(server);
             PacketDistributor.sendToAllPlayers(new S2CSyncShopDataPayload(categories));
             for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+                syncKnyazOrders(player);
                 LAST_SYNCED_VERSION.put(player.getUUID(), currentVer);
             }
         }
     }
 
     /**
-     * Sends shop data to player ONLY if their last synced version differs from the server's current version.
+     * Sends shop data to player ONLY if their last synced version differs from the server's current version,
+     * and always syncs live Knyaz / Crown / Treasury state.
      */
     public static void syncShopDataIfChanged(ServerPlayer player) {
         if (player != null && player.server != null) {
             int currentVer = ServerShopRegistry.getInstance().getSavedData(player.server).getDataVersion();
             if (LAST_SYNCED_VERSION.getOrDefault(player.getUUID(), -1) != currentVer) {
                 syncShopData(player);
+            } else {
+                syncKnyazOrders(player);
             }
         }
+    }
+
+    /**
+     * Sends Knyaz orders and live Knyaz/Crown/Treasury status to a specific player.
+     */
+    public static void syncKnyazOrders(ServerPlayer player) {
+        if (player == null || player.server == null) return;
+        var orders = ServerShopRegistry.getInstance().getKnyazOrders(player.server);
+        OneManagerBridge.KnyazInfo info = OneManagerBridge.getKnyazInfo(player.server);
+        boolean isKnyaz = OneManagerBridge.isPlayerKnyaz(player);
+        boolean hasCrown = OneManagerBridge.hasCrownInInventory(player);
+        PacketDistributor.sendToPlayer(player, new S2CSyncKnyazOrdersPayload(
+                orders,
+                isKnyaz,
+                hasCrown,
+                info.knyazName(),
+                info.treasuryAmount()
+        ));
+    }
+
+    /**
+     * Broadcasts Knyaz orders and live Knyaz/Crown/Treasury status to all online players.
+     */
+    public static void broadcastKnyazOrders(MinecraftServer server) {
+        if (server == null) return;
+        for (ServerPlayer player : server.getPlayerList().getPlayers()) {
+            syncKnyazOrders(player);
+        }
+    }
+
+    /**
+     * Publishes/updates or deletes a Knyaz order on the server.
+     * Allowed if the player is the Knyaz (or wears/holds the Crown) or is a server admin (permission level 2).
+     */
+    public static boolean manageKnyazOrder(ServerPlayer player, KnyazOrder incomingOrder, boolean delete) {
+        if (player == null || player.server == null || incomingOrder == null) {
+            return false;
+        }
+        boolean canManage = OneManagerBridge.isPlayerKnyaz(player) || player.hasPermissions(2);
+        if (!canManage) {
+            player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.no_permission").withStyle(ChatFormatting.RED));
+            return false;
+        }
+
+        MinecraftServer server = player.server;
+        ShopSavedData savedData = ServerShopRegistry.getInstance().getSavedData(server);
+
+        if (delete) {
+            boolean removed = savedData.removeKnyazOrder(incomingOrder.id());
+            if (removed) {
+                player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.deleted", incomingOrder.getDisplayTitle()).withStyle(ChatFormatting.YELLOW));
+                broadcastKnyazOrders(server);
+            }
+            return removed;
+        }
+
+        java.util.List<KnyazOrderItem> itemsToSave = incomingOrder.items();
+        if (itemsToSave.isEmpty() && !incomingOrder.description().isBlank()) {
+            itemsToSave = java.util.List.of(KnyazOrderItem.textTask(incomingOrder.description(), incomingOrder.completed()));
+        }
+
+        if (itemsToSave.isEmpty()) {
+            player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.error.empty_items").withStyle(ChatFormatting.RED));
+            return false;
+        }
+
+        if (incomingOrder.totalReward() <= 0) {
+            player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.error.invalid_reward").withStyle(ChatFormatting.RED));
+            return false;
+        }
+
+        Optional<KnyazOrder> existingOpt = savedData.getKnyazOrder(incomingOrder.id());
+        String createdBy = existingOpt.map(KnyazOrder::createdBy)
+                .filter(s -> !s.isBlank())
+                .orElseGet(() -> player.getGameProfile().getName());
+        String createdAt = existingOpt.map(KnyazOrder::createdAt)
+                .filter(s -> !s.isBlank())
+                .orElseGet(() -> java.time.LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")));
+        long paidReward = existingOpt.map(KnyazOrder::paidReward).orElse(0L);
+        java.util.List<String> respondents = existingOpt.map(KnyazOrder::respondents).orElse(java.util.List.of());
+
+        KnyazOrder orderToSave = new KnyazOrder(
+                incomingOrder.id(),
+                incomingOrder.title(),
+                createdBy,
+                itemsToSave,
+                incomingOrder.totalReward(),
+                Math.min(incomingOrder.totalReward(), paidReward),
+                createdAt,
+                respondents,
+                incomingOrder.description(),
+                incomingOrder.completed()
+        );
+
+        savedData.setKnyazOrder(orderToSave);
+        broadcastKnyazOrders(server);
+
+        if (existingOpt.isEmpty()) {
+            server.getPlayerList().broadcastSystemMessage(
+                    Component.translatable("oneshop.knyaz_orders.published_broadcast",
+                            player.getDisplayName(),
+                            orderToSave.getDisplayTitle(),
+                            String.format(Locale.ROOT, "%,d", orderToSave.totalReward()).replace(',', ' '),
+                            SprotaItem.CURRENCY_SYMBOL
+                    ).withStyle(ChatFormatting.GOLD),
+                    false
+            );
+        } else {
+            player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.saved", orderToSave.getDisplayTitle()).withStyle(ChatFormatting.GREEN));
+        }
+
+        return true;
+    }
+
+    /**
+     * Allows a resident player to respond to a Knyaz order.
+     * Records the resident's active character name in the order and notifies online Knyaz players.
+     */
+    public static boolean fulfillKnyazOrder(ServerPlayer player, String orderId) {
+        if (player == null || player.server == null || orderId == null || orderId.isBlank()) {
+            return false;
+        }
+
+        MinecraftServer server = player.server;
+        ShopSavedData savedData = ServerShopRegistry.getInstance().getSavedData(server);
+        Optional<KnyazOrder> orderOpt = savedData.getKnyazOrder(orderId);
+        if (orderOpt.isEmpty()) {
+            player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.not_found").withStyle(ChatFormatting.RED));
+            return false;
+        }
+
+        KnyazOrder order = orderOpt.get();
+        if (OneManagerBridge.isPlayerKnyaz(player)) {
+            player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.knyaz_cannot_respond").withStyle(ChatFormatting.RED));
+            return false;
+        }
+
+        String charName = OneManagerBridge.getPlayerCharacterName(server, player);
+        KnyazOrder updatedOrder = order.withRespondent(charName);
+        savedData.setKnyazOrder(updatedOrder);
+        broadcastKnyazOrders(server);
+
+        player.sendSystemMessage(Component.translatable("oneshop.knyaz_orders.respond_success", updatedOrder.getDisplayTitle()).withStyle(ChatFormatting.GREEN));
+
+        java.util.List<ServerPlayer> knyazList = OneManagerBridge.findOnlineKnyazPlayers(server);
+        Component knyazNotification = Component.translatable("oneshop.knyaz_orders.knyaz_notify_response", charName, updatedOrder.getDisplayTitle()).withStyle(ChatFormatting.GOLD);
+        java.util.Set<UUID> notified = new java.util.HashSet<>();
+        for (ServerPlayer knyaz : knyazList) {
+            if (knyaz != null && !knyaz.getUUID().equals(player.getUUID())) {
+                knyaz.sendSystemMessage(knyazNotification);
+                notified.add(knyaz.getUUID());
+            }
+        }
+        if (order.createdBy() != null && !order.createdBy().isBlank()) {
+            ServerPlayer creator = server.getPlayerList().getPlayerByName(order.createdBy());
+            if (creator != null && !notified.contains(creator.getUUID()) && !creator.getUUID().equals(player.getUUID())) {
+                creator.sendSystemMessage(knyazNotification);
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Item turn-in and claiming via order GUI is disabled; orders are handled in-person with the Knyaz.
+     */
+    public static boolean claimKnyazOrderItems(ServerPlayer player, String orderId) {
+        return false;
     }
 
     // --- Inventory Helper Methods ---

@@ -5,13 +5,14 @@ import com.oneshop.client.ClientBankCache;
 import com.oneshop.client.ClientShopCache;
 import com.oneshop.client.key.ModKeyBindings;
 import com.oneshop.item.ModItems;
-import com.oneshop.item.SprotaItem;
 import com.oneshop.network.C2SAdminUpdateCategoryPayload;
 import com.oneshop.network.C2SAdminUpdateEntryPayload;
 import com.oneshop.network.C2SDepositCashPayload;
 import com.oneshop.network.C2SExecuteTransactionPayload;
 import com.oneshop.network.C2SWithdrawCashPayload;
 import com.oneshop.service.ShopTransactionService;
+import com.oneshop.shop.KnyazOrder;
+import com.oneshop.shop.KnyazOrderItem;
 import com.oneshop.shop.LotIcon;
 import com.oneshop.shop.ShopCategory;
 import com.oneshop.shop.ShopEntry;
@@ -71,6 +72,7 @@ import java.util.function.Consumer;
  * detached high-z-index overlay layering, and full localization.
  */
 public class ShopScreen extends OneModUi {
+    public static final String KNYAZ_ORDERS_TAB_ID = "__knyaz_orders__";
     private static final ResourceLocation CURRENCY_ICON_TEXTURE =
             ResourceLocation.fromNamespaceAndPath(OneShop.MODID, "textures/gui/currency_icon.png");
     private static final ResourceLocation LOGO_SHOP_TEXTURE =
@@ -310,7 +312,7 @@ public class ShopScreen extends OneModUi {
     }
 
     public Component getBalanceComponent() {
-        return Component.translatable("oneshop.gui.balance", formatBalanceAmount(), SprotaItem.CURRENCY_SYMBOL);
+        return Component.translatable("oneshop.gui.balance", formatBalanceAmount());
     }
 
     public void updateBalanceDisplay() {
@@ -341,14 +343,20 @@ public class ShopScreen extends OneModUi {
         }
 
         List<ShopCategory> categories = ClientShopCache.getCategories();
+
+        if (!KNYAZ_ORDERS_TAB_ID.equals(selectedCategoryId)) {
+            if (selectedCategoryId.isEmpty() || categories.stream().noneMatch(c -> c.id().equals(selectedCategoryId))) {
+                selectedCategoryId = !categories.isEmpty() ? categories.get(0).id() : KNYAZ_ORDERS_TAB_ID;
+            }
+        }
+
+        // Pinned "Заказы Князя" tab at the top of the sidebar
+        sidebarCategories.child(buildKnyazOrdersSidebarTab());
+
         if (categories.isEmpty()) {
             sidebarCategories.child(Components.label(Component.translatable("oneshop.gui.no_categories")).color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
             refreshItemGrid();
             return;
-        }
-
-        if (selectedCategoryId.isEmpty() || categories.stream().noneMatch(c -> c.id().equals(selectedCategoryId))) {
-            selectedCategoryId = categories.get(0).id();
         }
 
         for (ShopCategory category : categories) {
@@ -450,6 +458,11 @@ public class ShopScreen extends OneModUi {
     private void refreshItemGrid() {
         if (itemGridContainer == null) return;
         itemGridContainer.clearChildren();
+
+        if (KNYAZ_ORDERS_TAB_ID.equals(selectedCategoryId)) {
+            buildKnyazOrdersContent();
+            return;
+        }
 
         ShopCategory activeCat = ClientShopCache.getCategory(selectedCategoryId).orElse(null);
 
@@ -1385,7 +1398,7 @@ public class ShopScreen extends OneModUi {
                 updatingFromButtons[0] = false;
             }
             double total = quantity[0] * unitPrice;
-            totalLabel.text(Component.translatable("oneshop.gui.modal.total", String.format(Locale.ROOT, "%.2f", total), SprotaItem.CURRENCY_SYMBOL));
+            totalLabel.text(Component.translatable("oneshop.gui.modal.total", String.format(Locale.ROOT, "%.2f", total)));
 
             if (isBuy) {
                 if (total > ClientBankCache.getBalance()) {
@@ -1474,7 +1487,12 @@ public class ShopScreen extends OneModUi {
 
         // Total price and status labels
         totalLabel.color(Color.ofRgb(BedrockTheme.TEXT_GOLD));
-        dialog.child(totalLabel);
+        FlowLayout totalRow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+        totalRow.verticalAlignment(VerticalAlignment.CENTER);
+        totalRow.gap(3);
+        totalRow.child(totalLabel);
+        totalRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
+        dialog.child(totalRow);
         dialog.child(statusLabel);
 
         // Action buttons: [Confirm] [Cancel]
@@ -1515,7 +1533,12 @@ public class ShopScreen extends OneModUi {
         title.color(Color.ofRgb(BedrockTheme.TEXT_GREEN));
         dialog.child(title);
 
-        dialog.child(Components.label(Component.translatable("oneshop.gui.deposit.in_inventory", availableCoins, SprotaItem.CURRENCY_SYMBOL)).color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
+        FlowLayout invRow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+        invRow.verticalAlignment(VerticalAlignment.CENTER);
+        invRow.gap(3);
+        invRow.child(Components.label(Component.translatable("oneshop.gui.deposit.in_inventory", availableCoins)).color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
+        invRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
+        dialog.child(invRow);
 
         final int[] amount = {Math.min(1, availableCoins)};
 
@@ -1642,7 +1665,12 @@ public class ShopScreen extends OneModUi {
         title.color(Color.ofRgb(BedrockTheme.TEXT_GOLD));
         dialog.child(title);
 
-        dialog.child(Components.label(Component.translatable("oneshop.gui.withdraw.bank_balance", formatBalanceAmount() + " " + SprotaItem.CURRENCY_SYMBOL)).color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
+        FlowLayout balRow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+        balRow.verticalAlignment(VerticalAlignment.CENTER);
+        balRow.gap(3);
+        balRow.child(Components.label(Component.translatable("oneshop.gui.withdraw.bank_balance", formatBalanceAmount())).color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
+        balRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
+        dialog.child(balRow);
         dialog.child(Components.label(Component.translatable("oneshop.gui.withdraw.inventory_space", inventorySpace)).color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
 
         final int[] amount = {Math.min(1, maxWithdrawable)};
@@ -1750,6 +1778,353 @@ public class ShopScreen extends OneModUi {
         FlowLayout overlay = TransferModal.createOverlay(this, this::popModal);
         FlowLayout dialog = (FlowLayout) overlay.children().get(0);
         mountModal(overlay, dialog);
+    }
+
+    public boolean canManageKnyazOrders() {
+        return this.isAdmin || ClientShopCache.isClientKnyaz() || ClientShopCache.clientHasCrown();
+    }
+
+    public void onKnyazOrdersSynced() {
+        refreshCategories();
+    }
+
+    public void openKnyazOrderDetailModal(KnyazOrder order) {
+        FlowLayout overlay = KnyazOrderModals.createOrderDetailOverlay(this, order, canManageKnyazOrders(), this::popModal);
+        FlowLayout dialog = (FlowLayout) overlay.children().get(0);
+        mountModal(overlay, dialog);
+    }
+
+    public void openKnyazOrderEditorModal(KnyazOrder existingOrder) {
+        FlowLayout overlay = KnyazOrderModals.createOrderEditorOverlay(this, existingOrder, this::popModal);
+        FlowLayout dialog = (FlowLayout) overlay.children().get(0);
+        mountModal(overlay, dialog);
+    }
+
+    public void openItemOnlyPickerModal(java.util.function.Consumer<LotIcon> onSelect) {
+        openIconPickerModal(onSelect);
+    }
+
+    private LotIcon resolveKnyazTabIcon() {
+        for (String id : List.of("onemanager:monarch_crown", "monarchcrownmod:monarch_crown")) {
+            ResourceLocation loc = ResourceLocation.tryParse(id);
+            if (loc != null && BuiltInRegistries.ITEM.containsKey(loc)) {
+                Item crown = BuiltInRegistries.ITEM.get(loc);
+                if (crown != Items.AIR) {
+                    return LotIcon.of(new ItemStack(crown));
+                }
+            }
+        }
+        return LotIcon.of(new ItemStack(Items.GOLDEN_HELMET));
+    }
+
+    private HoverableFlowLayout buildKnyazOrdersSidebarTab() {
+        boolean isSelected = KNYAZ_ORDERS_TAB_ID.equals(selectedCategoryId);
+
+        HoverableFlowLayout tabBtn = new HoverableFlowLayout(Sizing.fill(100), Sizing.fixed(24), FlowLayout.Algorithm.HORIZONTAL);
+        tabBtn.hoverCondition(() -> !isModalOpen());
+        tabBtn.padding(Insets.of(2, 2, 4, 4));
+        tabBtn.verticalAlignment(VerticalAlignment.CENTER);
+        tabBtn.cursorStyle(CursorStyle.HAND);
+
+        AnimatedFloat selection = this.tabSelection.computeIfAbsent(KNYAZ_ORDERS_TAB_ID, k -> new AnimatedFloat(isSelected ? 1f : 0f));
+        selection.animateTo(isSelected ? 1f : 0f, 160, Easing.CUBIC);
+        tabBtn.surface(BedrockSurfaces.withHoverOutline((context, comp) ->
+                BedrockSurfaces.drawTabButton(context, comp.x(), comp.y(), comp.width(), comp.height(), selection.get())));
+
+        AnimatableProperty<Float> indicatorAlpha = this.categoryIndicatorAlpha.computeIfAbsent(
+                KNYAZ_ORDERS_TAB_ID, k -> AnimatableProperty.of(isSelected ? 1.0f : 0.0f));
+        tabBtn.child(new CategoryIndicator(indicatorAlpha));
+
+        FlowLayout leftContent = Containers.horizontalFlow(Sizing.expand(100), Sizing.fill(100));
+        leftContent.verticalAlignment(VerticalAlignment.CENTER);
+        leftContent.gap(4);
+
+        leftContent.child(new LotIconDisplayComponent(resolveKnyazTabIcon(), 16));
+
+        int activeCount = ClientShopCache.getKnyazOrders().size();
+        Component tabTitle = activeCount > 0
+                ? Component.translatable("oneshop.knyaz_orders.tab_with_count", activeCount)
+                : Component.translatable("oneshop.knyaz_orders.tab");
+
+        LabelComponent nameLabel = Components.label(tabTitle);
+        nameLabel.color(Color.ofRgb(BedrockTheme.TEXT_GOLD));
+        nameLabel.shadow(true);
+        nameLabel.maxWidth(88);
+        leftContent.child(nameLabel);
+
+        tabBtn.child(leftContent);
+
+        tabBtn.mouseDown().subscribe((mouseX, mouseY, button) -> {
+            if (isModalOpen()) return true;
+            if (button == 0) {
+                if (!KNYAZ_ORDERS_TAB_ID.equals(this.selectedCategoryId)) {
+                    String prevId = this.selectedCategoryId;
+                    this.selectedCategoryId = KNYAZ_ORDERS_TAB_ID;
+                    AnimatableProperty<Float> prevAlpha = this.categoryIndicatorAlpha.get(prevId);
+                    if (prevAlpha != null) {
+                        prevAlpha.animate(120, Easing.SINE, 0.0f);
+                    }
+                    AnimatableProperty<Float> newAlpha = this.categoryIndicatorAlpha.computeIfAbsent(
+                            this.selectedCategoryId, k -> AnimatableProperty.of(0.0f));
+                    newAlpha.animate(160, Easing.SINE, 1.0f);
+                    refreshCategories();
+                }
+                return true;
+            }
+            return false;
+        });
+
+        return tabBtn;
+    }
+
+    private void buildKnyazOrdersContent() {
+        // Header Banner: Knyaz Status, Crown Status, and OneManager Treasury Balance
+        FlowLayout banner = Containers.verticalFlow(Sizing.fill(100), Sizing.content());
+        banner.surface(BedrockTheme.CARD);
+        banner.padding(Insets.of(5));
+        banner.gap(3);
+
+        FlowLayout topInfoRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        topInfoRow.verticalAlignment(VerticalAlignment.CENTER);
+        topInfoRow.gap(6);
+
+        String knyazName = ClientShopCache.getKnyazName();
+        Component knyazStatusComp = (knyazName != null && !knyazName.isBlank())
+                ? Component.translatable("oneshop.knyaz_orders.current_knyaz", knyazName)
+                : Component.translatable("oneshop.knyaz_orders.no_knyaz");
+        LabelComponent knyazLbl = Components.label(knyazStatusComp);
+        knyazLbl.color(Color.ofRgb(BedrockTheme.TEXT_GOLD));
+        topInfoRow.child(knyazLbl);
+
+        banner.child(topInfoRow);
+
+        // Player's own Knyaz / Resident role badge row
+        FlowLayout roleRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+        roleRow.verticalAlignment(VerticalAlignment.CENTER);
+        roleRow.gap(8);
+
+        boolean isKnyaz = ClientShopCache.isClientKnyaz();
+        Component roleText = Component.translatable(
+                isKnyaz ? "oneshop.knyaz_orders.you_are_knyaz" : "oneshop.knyaz_orders.you_are_resident"
+        );
+        LabelComponent roleLbl = Components.label(roleText);
+        roleLbl.color(Color.ofRgb(isKnyaz ? BedrockTheme.TEXT_GOLD : BedrockTheme.TEXT_MUTED));
+        roleRow.child(roleLbl);
+
+        banner.child(roleRow);
+        itemGridContainer.child(banner);
+
+        // "+ Разместить заказ Князя" button for Knyaz / Crown holder / Admin
+        if (canManageKnyazOrders()) {
+            BedrockButton newOrderBtn = new BedrockButton(
+                    Component.translatable("oneshop.knyaz_orders.new_order_btn"),
+                    Sizing.fill(100), Sizing.fixed(20),
+                    () -> {
+                        if (this.activeModal == null) {
+                            openKnyazOrderEditorModal(null);
+                        }
+                    }
+            );
+            newOrderBtn.textColor(BedrockTheme.TEXT_GREEN);
+            newOrderBtn.hoverCondition(() -> !isModalOpen());
+            itemGridContainer.child(newOrderBtn);
+        }
+
+        List<KnyazOrder> orders = ClientShopCache.getKnyazOrders();
+        if (orders.isEmpty()) {
+            itemGridContainer.child(Components.label(Component.translatable("oneshop.knyaz_orders.no_orders"))
+                    .color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
+            return;
+        }
+
+        List<KnyazOrder> filtered = orders.stream()
+                .filter(o -> searchQuery.isEmpty() || o.matchesSearch(searchQuery))
+                .toList();
+
+        if (filtered.isEmpty()) {
+            itemGridContainer.child(Components.label(Component.translatable("oneshop.gui.no_matching_items"))
+                    .color(Color.ofRgb(BedrockTheme.TEXT_MUTED)));
+            return;
+        }
+
+        java.util.Map<Item, Integer> playerInv = KnyazOrderModals.countPlayerInventoryByItem();
+
+        int availableWidth = itemGridContainer.width() > 0
+                ? itemGridContainer.width()
+                : Math.max(160, (int) (this.width * 0.92) - 130);
+        int cardWidth = 140;
+        int gap = 4;
+        int columns = Math.max(1, (availableWidth + gap) / (cardWidth + gap));
+
+        FlowLayout currentRow = null;
+        for (int i = 0; i < filtered.size(); i++) {
+            if (i % columns == 0) {
+                currentRow = Containers.horizontalFlow(Sizing.fill(100), Sizing.content());
+                currentRow.gap(gap);
+                itemGridContainer.child(currentRow);
+            }
+            KnyazOrder order = filtered.get(i);
+            currentRow.child(buildKnyazOrderCard(order, playerInv, cardWidth));
+        }
+    }
+
+    private FlowLayout buildKnyazOrderCard(KnyazOrder order, java.util.Map<Item, Integer> playerInv, int cardWidth) {
+        int cardHeight = 96;
+        HoverableFlowLayout card = new HoverableFlowLayout(Sizing.fixed(cardWidth), Sizing.fixed(cardHeight), FlowLayout.Algorithm.VERTICAL);
+        card.hoverCondition(() -> !isModalOpen());
+        card.padding(Insets.of(4));
+        card.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
+        card.gap(3);
+        card.cursorStyle(CursorStyle.HAND);
+
+        int readyCount = KnyazOrderModals.countReadyChecklistItems(order, playerInv);
+        boolean allReady = KnyazOrderModals.isOrderAllReadyForPlayer(order, playerInv);
+        boolean anyReady = readyCount > 0;
+        int statusBorder = allReady
+                ? BedrockTheme.TEXT_GREEN
+                : (anyReady ? BedrockTheme.TEXT_GOLD : BedrockTheme.BORDER_LIGHT);
+
+        Surface cardBaseSurface = (context, comp) -> {
+            int x = comp.x(), y = comp.y(), w = comp.width(), h = comp.height();
+            int bg = card.isHovered() ? BedrockTheme.BG_HOVER : BedrockTheme.BG_CARD;
+            BedrockTheme.drawBeveledBox(context, x, y, w, h, bg, statusBorder, BedrockTheme.BORDER_DARK);
+        };
+        card.surface(BedrockTheme.withHoverOutline(cardBaseSurface, 0, BedrockTheme.OUTLINE_HOVER));
+
+        // Title
+        LabelComponent titleLbl = Components.label(Component.literal(order.getDisplayTitle()));
+        titleLbl.color(Color.ofRgb(BedrockTheme.TEXT_WHITE));
+        titleLbl.shadow(true);
+        titleLbl.maxWidth(cardWidth - (canManageKnyazOrders() ? 28 : 10));
+        card.child(titleLbl);
+
+        // Mini row of required item icons with RED (not ready) / GREEN (ready) frames
+        FlowLayout iconsRow = Containers.horizontalFlow(Sizing.content(), Sizing.fixed(22));
+        iconsRow.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
+        iconsRow.gap(3);
+
+        java.util.Map<Item, Integer> tempInv = new java.util.HashMap<>(playerInv);
+        int maxShown = Math.min(4, order.items().size());
+        for (int i = 0; i < maxShown; i++) {
+            KnyazOrderItem req = order.items().get(i);
+            boolean itemReady;
+            if (req.isTextTask()) {
+                itemReady = order.isCompleted() || req.isCompleted();
+            } else {
+                Item item = req.resolveItem();
+                int avail = (item != Items.AIR) ? tempInv.getOrDefault(item, 0) : 0;
+                itemReady = order.isCompleted() || req.isCompleted() || (avail >= req.requiredCount());
+                if (itemReady && item != Items.AIR && !req.isCompleted()) {
+                    tempInv.put(item, Math.max(0, avail - req.requiredCount()));
+                }
+            }
+            int slotBorder = itemReady ? BedrockTheme.TEXT_GREEN : BedrockTheme.TEXT_RED;
+
+            FlowLayout slot = Containers.horizontalFlow(Sizing.fixed(20), Sizing.fixed(20));
+            slot.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
+            slot.surface((ctx, c) -> {
+                BedrockTheme.drawBeveledBox(ctx, c.x(), c.y(), c.width(), c.height(), BedrockTheme.BG_INPUT, slotBorder, slotBorder);
+                BedrockTheme.drawOutline(ctx, c.x(), c.y(), c.width(), c.height(), slotBorder);
+            });
+            ItemStack stack = req.createDisplayStack();
+            if (!stack.isEmpty()) {
+                slot.child(new ItemDisplayComponent(stack, 16));
+            }
+            iconsRow.child(slot);
+        }
+        if (order.items().size() > maxShown) {
+            LabelComponent moreLbl = Components.label(Component.literal("+" + (order.items().size() - maxShown)));
+            moreLbl.color(Color.ofRgb(BedrockTheme.TEXT_MUTED));
+            iconsRow.child(moreLbl);
+        }
+        card.child(iconsRow);
+
+        // Progress + Reward row
+        LabelComponent progLbl;
+        if (order.isCompleted()) {
+            progLbl = Components.label(Component.translatable("oneshop.knyaz_orders.button.completed_short"));
+            progLbl.color(Color.ofRgb(BedrockTheme.TEXT_GREEN));
+        } else {
+            progLbl = Components.label(Component.translatable(
+                    "oneshop.knyaz_orders.card_checklist",
+                    readyCount,
+                    order.items().size()
+            ));
+            progLbl.color(Color.ofRgb(allReady ? BedrockTheme.TEXT_GREEN : BedrockTheme.TEXT_MUTED));
+        }
+        card.child(progLbl);
+
+        FlowLayout rewardRow = Containers.horizontalFlow(Sizing.content(), Sizing.content());
+        rewardRow.alignment(HorizontalAlignment.CENTER, VerticalAlignment.CENTER);
+        rewardRow.gap(2);
+        LabelComponent rewLbl = Components.label(Component.literal(formatCompactPrice(order.totalReward())));
+        rewLbl.color(Color.ofRgb(BedrockTheme.TEXT_GOLD));
+        rewardRow.child(rewLbl);
+        rewardRow.child(new TextureDisplayComponent(CURRENCY_ICON_TEXTURE, 8, 8, 0f, 0f, 8, 8, 8, 8));
+        card.child(rewardRow);
+
+        // Open order button
+        Component openBtnText = Component.translatable("oneshop.knyaz_orders.button.open");
+        BedrockButton openBtn = new BedrockButton(
+                openBtnText,
+                Sizing.fill(92), Sizing.fixed(15),
+                () -> {
+                    if (this.activeModal == null) {
+                        openKnyazOrderDetailModal(order);
+                    }
+                }
+        );
+        openBtn.hoverCondition(() -> !isModalOpen());
+        if (anyReady) {
+            openBtn.textColor(BedrockTheme.TEXT_GREEN);
+        }
+        card.child(openBtn);
+
+        // Edit button for Knyaz / Crown holder / Admin
+        BedrockButton editBtn = null;
+        if (canManageKnyazOrders()) {
+            editBtn = new BedrockButton(
+                    Component.literal("✎"),
+                    Sizing.fixed(18), Sizing.fixed(18),
+                    () -> {
+                        if (this.activeModal == null) {
+                            openKnyazOrderEditorModal(order);
+                        }
+                    }
+            );
+            editBtn.zIndex(10);
+            editBtn.padding(Insets.none());
+            editBtn.textColor(BedrockTheme.TEXT_GOLD);
+            editBtn.positioning(Positioning.absolute(cardWidth - 20, 2));
+            editBtn.hoverCondition(() -> !isModalOpen());
+            editBtn.tooltip(Component.translatable("oneshop.knyaz_orders.edit_tooltip"));
+            card.child(editBtn);
+        }
+
+        final BedrockButton finalEditBtn = editBtn;
+        card.mouseDown().subscribe((mx, my, button) -> {
+            if (isModalOpen()) return true;
+            if (finalEditBtn != null && finalEditBtn.isMouseOver(mx, my)) {
+                return false;
+            }
+            if (openBtn.isMouseOver(mx, my)) {
+                return false;
+            }
+            if (button == 0) {
+                if (this.activeModal == null) {
+                    openKnyazOrderDetailModal(order);
+                }
+                return true;
+            } else if (button == 1 && canManageKnyazOrders()) {
+                if (this.activeModal == null) {
+                    openKnyazOrderEditorModal(order);
+                }
+                return true;
+            }
+            return false;
+        });
+
+        return card;
     }
 
 

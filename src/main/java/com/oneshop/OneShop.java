@@ -57,6 +57,7 @@ public class OneShop {
             LOGGER.debug("Syncing account balance and shop data for logged in player: {}", serverPlayer.getScoreboardName());
             PlayerAccountService.syncBalance(serverPlayer);
             ShopTransactionService.syncShopData(serverPlayer);
+            ModNetwork.syncTabData(serverPlayer);
         }
     }
 
@@ -66,6 +67,7 @@ public class OneShop {
             LOGGER.debug("Syncing account balance and shop data for respawned player: {}", serverPlayer.getScoreboardName());
             PlayerAccountService.syncBalance(serverPlayer);
             ShopTransactionService.syncShopData(serverPlayer);
+            ModNetwork.syncTabData(serverPlayer);
         }
     }
 

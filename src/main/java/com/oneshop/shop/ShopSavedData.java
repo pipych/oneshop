@@ -31,9 +31,12 @@ public class ShopSavedData extends SavedData {
     public static final String FILE_NAME = DATA_NAME + ".dat";
 
     public static final Codec<List<ShopCategory>> CATEGORIES_CODEC = ShopCategory.CODEC.listOf();
+    public static final Codec<List<KnyazOrder>> KNYAZ_ORDERS_CODEC = KnyazOrder.CODEC.listOf();
 
     private final Map<String, ShopCategory> categories = new LinkedHashMap<>();
+    private final Map<String, KnyazOrder> knyazOrders = new LinkedHashMap<>();
     private List<ShopCategory> cachedSortedCategories = null;
+    private List<KnyazOrder> cachedKnyazOrders = null;
     private final Map<String, ShopEntry> entryLookupCache = new java.util.HashMap<>();
     private int dataVersion = 1;
 
@@ -118,13 +121,18 @@ public class ShopSavedData extends SavedData {
                 .ifSuccess(resultTag -> tag.put("categories", resultTag))
                 .ifError(error -> OneShop.LOGGER.error("Failed to serialize shop categories: {}", error.message()));
 
+        List<KnyazOrder> ordersList = new ArrayList<>(this.knyazOrders.values());
+        KNYAZ_ORDERS_CODEC.encodeStart(ops, ordersList)
+                .ifSuccess(resultTag -> tag.put("knyazOrders", resultTag))
+                .ifError(error -> OneShop.LOGGER.error("Failed to serialize knyaz orders: {}", error.message()));
+
         return tag;
     }
 
     public static ShopSavedData load(CompoundTag tag, HolderLookup.Provider registries) {
         ShopSavedData data = new ShopSavedData();
+        var ops = registries.createSerializationContext(NbtOps.INSTANCE);
         if (tag.contains("categories")) {
-            var ops = registries.createSerializationContext(NbtOps.INSTANCE);
             CATEGORIES_CODEC.parse(ops, tag.get("categories"))
                     .ifSuccess(list -> {
                         for (ShopCategory cat : list) {
@@ -136,6 +144,15 @@ public class ShopSavedData extends SavedData {
             data.populateDefaults();
             data.setDirty();
         }
+        if (tag.contains("knyazOrders")) {
+            KNYAZ_ORDERS_CODEC.parse(ops, tag.get("knyazOrders"))
+                    .ifSuccess(list -> {
+                        for (KnyazOrder order : list) {
+                            data.knyazOrders.put(order.id(), order);
+                        }
+                    })
+                    .ifError(error -> OneShop.LOGGER.error("Failed to deserialize knyaz orders: {}", error.message()));
+        }
         return data;
     }
 
@@ -143,6 +160,7 @@ public class ShopSavedData extends SavedData {
     public synchronized void setDirty() {
         this.dataVersion++;
         this.cachedSortedCategories = null;
+        this.cachedKnyazOrders = null;
         this.entryLookupCache.clear();
         super.setDirty();
     }
@@ -306,6 +324,36 @@ public class ShopSavedData extends SavedData {
 
     public synchronized void clear() {
         this.categories.clear();
+        this.knyazOrders.clear();
         setDirty();
+    }
+
+    // Knyaz Orders Accessors & Mutators
+    public synchronized List<KnyazOrder> getKnyazOrders() {
+        if (this.cachedKnyazOrders != null) {
+            return this.cachedKnyazOrders;
+        }
+        this.cachedKnyazOrders = List.copyOf(this.knyazOrders.values());
+        return this.cachedKnyazOrders;
+    }
+
+    public synchronized Optional<KnyazOrder> getKnyazOrder(String orderId) {
+        if (orderId == null) return Optional.empty();
+        return Optional.ofNullable(this.knyazOrders.get(orderId));
+    }
+
+    public synchronized void setKnyazOrder(KnyazOrder order) {
+        Objects.requireNonNull(order, "KnyazOrder cannot be null");
+        this.knyazOrders.put(order.id(), order);
+        setDirty();
+    }
+
+    public synchronized boolean removeKnyazOrder(String orderId) {
+        if (orderId == null) return false;
+        boolean removed = this.knyazOrders.remove(orderId) != null;
+        if (removed) {
+            setDirty();
+        }
+        return removed;
     }
 }

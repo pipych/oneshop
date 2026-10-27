@@ -29,8 +29,19 @@ public final class BedrockTheme {
     public static final int TEXT_WHITE = 0xFFFFFFFF;
     public static final int TEXT_MUTED = 0xFFAAAAAA;
     public static final int TEXT_GOLD = 0xFFFFAA00;
+    public static final int TEXT_ORANGE = 0xFFFF8C00;
     public static final int TEXT_RED = 0xFFFF5555;
     public static final int TEXT_GREEN = 0xFF55FF55;
+
+    public static final int TOOLTIP_GRAY_BG_TOP = 0xCC1E1F22;
+    public static final int TOOLTIP_GRAY_BG_BOTTOM = 0xCC141517;
+    public static final int TOOLTIP_GRAY_BORDER_TOP = 0xB06E7075;
+    public static final int TOOLTIP_GRAY_BORDER_BOTTOM = 0xB03A3C40;
+
+    public static final int BG_CARD_TRANSLUCENT = 0x88242528;
+    public static final int BG_INSET_TRANSLUCENT = 0x7818191B;
+    public static final int BORDER_LIGHT_TRANSLUCENT = 0x88505256;
+    public static final int BORDER_DARK_TRANSLUCENT = 0x88141517;
 
     private BedrockTheme() {}
 
@@ -64,6 +75,47 @@ public final class BedrockTheme {
     public static final Surface INSET = (context, component) -> {
         drawBeveledBox(context, component.x(), component.y(), component.width(), component.height(), BG_INPUT, BORDER_DARK, BORDER_LIGHT);
     };
+
+    /**
+     * Translucent Bedrock card surface.
+     */
+    public static final Surface CARD_TRANSLUCENT = (context, component) -> {
+        drawBeveledBox(context, component.x(), component.y(), component.width(), component.height(),
+                BG_CARD_TRANSLUCENT, BORDER_LIGHT_TRANSLUCENT, BORDER_DARK_TRANSLUCENT);
+    };
+
+    /**
+     * Translucent Bedrock inset surface.
+     */
+    public static final Surface INSET_TRANSLUCENT = (context, component) -> {
+        drawBeveledBox(context, component.x(), component.y(), component.width(), component.height(),
+                BG_INSET_TRANSLUCENT, BORDER_DARK_TRANSLUCENT, BORDER_LIGHT_TRANSLUCENT);
+    };
+
+    /**
+     * Gray vanilla-styled tooltip background surface for floating overlays.
+     */
+    public static final Surface GRAY_TOOLTIP_SURFACE = (context, component) -> {
+        drawGrayTooltipBox(context, component.x(), component.y(), component.width(), component.height());
+    };
+
+    public static void drawGrayTooltipBox(OwoUIDrawContext context, int x, int y, int w, int h) {
+        if (w < 8 || h < 8) return;
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        net.minecraft.client.gui.screens.inventory.tooltip.TooltipRenderUtil.renderTooltipBackground(
+                context,
+                x + 4,
+                y + 4,
+                w - 8,
+                h - 8,
+                0,
+                TOOLTIP_GRAY_BG_TOP,
+                TOOLTIP_GRAY_BG_BOTTOM,
+                TOOLTIP_GRAY_BORDER_TOP,
+                TOOLTIP_GRAY_BORDER_BOTTOM
+        );
+    }
 
     /**
      * Bedrock 1px beveled button renderer.
